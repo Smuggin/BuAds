@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { CampaignsView } from "@/components/campaigns/CampaignsView";
 
 export default function Page() {
-  return <PlaceholderView title="แคมเปญรวม · Campaigns" phase="Phase 4" />;
+  return <CampaignsView />;
 }

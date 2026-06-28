@@ -2,7 +2,13 @@
  * App-level static config (framework-agnostic). See .ai/data-contracts.md.
  * Values mirror reference/AdsHub.prototype.dc.html.
  */
-import type { AccountKey, AccountMeta, MetricDef } from "@/data/types";
+import type {
+  AccountKey,
+  AccountMeta,
+  CreativeFormat,
+  LogType,
+  MetricDef,
+} from "@/data/types";
 
 export interface NavItem {
   id: string;
@@ -92,3 +98,36 @@ export const RAMP = [
 ];
 
 export const MARKED_ROAS_MULTIPLIER = 1.2;
+
+/** Creative format → thumb icon + color (DESIGN §4.3). */
+export const FORMAT_META: Record<CreativeFormat, { icon: string; color: string }> = {
+  Video: { icon: "▶", color: "#d6453d" },
+  Reels: { icon: "❏", color: "#6E56CF" },
+  Carousel: { icon: "▥", color: "#c98a16" },
+  Image: { icon: "▣", color: "#3b6fe0" },
+};
+
+/** Activity log: actor badge meta (icon names are strings — no React in constants). */
+export const LOG_ACTOR_META = {
+  manual: { label: "ทีมงาน", sub: "Manual", avatar: "PJ", color: "#3b6fe0", bg: "#eef3fe" },
+  auto: { label: "ระบบอัตโนมัติ", sub: "Automation", icon: "bolt", color: "#6E56CF", bg: "#f0edfb" },
+} as const;
+
+/** Activity log: per-type icon (Icon name) + color. */
+export const LOG_TYPE_META: Record<LogType, { icon: string; color: string }> = {
+  budget_up: { icon: "trendUp", color: "#1f8a5b" },
+  budget_down: { icon: "trendDown", color: "#c98a16" },
+  pause: { icon: "pause", color: "#d6453d" },
+  resume: { icon: "play", color: "#1f8a5b" },
+  auto_close: { icon: "pause", color: "#d6453d" },
+  scale: { icon: "trendUp", color: "#1f8a5b" },
+  kpi_edit: { icon: "gear", color: "#3b6fe0" },
+};
+
+/** firstClick sort direction per column — "best first". */
+export function firstSortDir(key: string): "asc" | "desc" {
+  if (key === "name") return "asc";
+  if (key === "status" || key === "open" || key === "budget") return "desc";
+  const m = METRIC_DEFS.find((d) => d.key === key);
+  return m && m.dir === "min" ? "desc" : "asc";
+}
