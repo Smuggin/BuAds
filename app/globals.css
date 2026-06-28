@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Runtime-themeable accent (DESIGN.md §2). Default #3b6fe0.
+ * Re-theme by setting --accent-rgb / --accent on <html data-accent="…">.
+ * Options: #3b6fe0 (59 111 224) · #6E56CF (110 86 207) · #1F8A5B (31 138 91) · #16181d (22 24 29)
+ */
+:root {
+  --accent-rgb: 59 111 224;
+  --accent: #3b6fe0;
+}
+[data-accent="violet"] { --accent-rgb: 110 86 207; --accent: #6e56cf; }
+[data-accent="green"]  { --accent-rgb: 31 138 91;  --accent: #1f8a5b; }
+[data-accent="ink"]    { --accent-rgb: 22 24 29;   --accent: #16181d; }
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    background: #f5f6f8; /* page-bg */
+    color: #16181d; /* ink */
+  }
+  body {
+    font-family: var(--font-plex-thai), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Slim scrollbars, matching the reference console aesthetic */
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cdd1d8;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* Every number renders in Plex Mono — apply to numeric spans/cells. */
+  .num {
+    font-family: var(--font-plex-mono), ui-monospace, monospace;
+    font-feature-settings: "tnum" 1;
+  }
+}
