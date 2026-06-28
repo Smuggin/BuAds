@@ -76,6 +76,7 @@ export interface AppState {
   prodThr: Record<string, Partial<Thresholds>>;
   autoOverride: Record<string, boolean>;
   creativeOpen: Record<string, boolean>;
+  ruleOverride: Record<string, boolean>;
 
   // modals / in-page detail
   budgetModal: BudgetModalState | null;
@@ -119,6 +120,7 @@ export interface AppActions {
   setThreshold: (sku: string, key: MetricKey, value: number) => void;
   toggleAutoClose: (sku: string, base: boolean) => void;
   toggleCreativeOpen: (id: string, defaultOn: boolean) => void;
+  toggleRule: (id: string, base: boolean) => void;
 
   openBudgetModal: (id: string, draft: number) => void;
   setBudgetDraft: (draft: number) => void;
@@ -175,6 +177,7 @@ export const initialAppState: AppState = {
   prodThr: {},
   autoOverride: {},
   creativeOpen: {},
+  ruleOverride: {},
   budgetModal: null,
   historyModal: null,
   campDetail: null,
@@ -236,6 +239,11 @@ export function createAppStore(init: Partial<AppState> = {}) {
       set((s) => {
         const cur = s.creativeOpen[id] ?? defaultOn;
         return { creativeOpen: { ...s.creativeOpen, [id]: !cur } };
+      }),
+    toggleRule: (id, base) =>
+      set((s) => {
+        const cur = s.ruleOverride[id] ?? base;
+        return { ruleOverride: { ...s.ruleOverride, [id]: !cur } };
       }),
 
     openBudgetModal: (id, draft) => set({ budgetModal: { id, draft } }),

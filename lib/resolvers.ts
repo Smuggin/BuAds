@@ -66,6 +66,13 @@ export function allCategories(
   return out;
 }
 
+export function effRuleOn(
+  rule: { id: string; on: boolean },
+  ruleOverride: Record<string, boolean> = {},
+): boolean {
+  return ruleOverride[rule.id] ?? rule.on;
+}
+
 export function isConnected(
   account: { id: string; connected: boolean },
   connOverride: Record<string, boolean> = {},

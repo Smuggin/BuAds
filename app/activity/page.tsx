@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { ActivityView } from "@/components/activity/ActivityView";
 
 export default function Page() {
-  return <PlaceholderView title="ประวัติการทำงาน · Activity log" phase="Phase 6" />;
+  return <ActivityView />;
 }

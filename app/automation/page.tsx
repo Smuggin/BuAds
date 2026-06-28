@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { AutomationView } from "@/components/automation/AutomationView";
 
 export default function Page() {
-  return <PlaceholderView title="ระบบอัตโนมัติ · Automation" phase="Phase 6" />;
+  return <AutomationView />;
 }
