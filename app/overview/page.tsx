@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { OverviewView } from "@/components/overview/OverviewView";
 
 export default function Page() {
-  return <PlaceholderView title="ภาพรวมบัญชี · Overview" phase="Phase 3" />;
+  return <OverviewView />;
 }
