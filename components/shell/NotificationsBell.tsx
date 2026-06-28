@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons/Icon";
+import { getRules } from "@/lib/api";
+import { effRuleOn } from "@/lib/resolvers";
 import { NOTIFICATIONS } from "@/data/notifications";
-import type { NotificationKind } from "@/data/types";
+import type { NotificationKind, Rule } from "@/data/types";
 import { useAppStore } from "@/store/AppProvider";
 
 const KIND_META: Record<
@@ -21,9 +24,22 @@ export function NotificationsBell() {
   const read = useAppStore((s) => s.notifRead);
   const toggle = useAppStore((s) => s.toggleNotif);
   const close = useAppStore((s) => s.closeNotif);
+  const ruleOverride = useAppStore((s) => s.ruleOverride);
+
+  const [rules, setRules] = useState<Rule[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getRules().then((r) => alive && setRules(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const unread = read ? 0 : NOTIFICATIONS.length;
   const warnCount = NOTIFICATIONS.filter((n) => n.kind === "warn").length;
+  const activeRules = rules.filter((r) => effRuleOn(r, ruleOverride)).length;
+  const offRules = rules.length - activeRules;
+  const rulesOk = offRules === 0;
 
   return (
     <div className="relative">
@@ -61,10 +77,21 @@ export function NotificationsBell() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2 border-b border-border-2 bg-[#f0f8f4] px-4 py-[11px]">
-              <span className="h-2 w-2 flex-shrink-0 rounded-full bg-success" />
-              <span className="text-[12px] font-semibold text-success">
-                ระบบอัตโนมัติทำงานปกติ
+            <div
+              className="flex items-center gap-2 border-b border-border-2 px-4 py-[11px]"
+              style={{ background: rulesOk ? "#f0f8f4" : "#fbf6ec" }}
+            >
+              <span
+                className="h-2 w-2 flex-shrink-0 rounded-full"
+                style={{ background: rulesOk ? "#1f8a5b" : "#c98a16" }}
+              />
+              <span
+                className="num text-[12px] font-semibold"
+                style={{ color: rulesOk ? "#1f8a5b" : "#9a6a12" }}
+              >
+                {rulesOk
+                  ? `ระบบอัตโนมัติทำงานปกติ · ${activeRules} กฎ`
+                  : `มี ${offRules} กฎถูกปิด · ทำงานอยู่ ${activeRules} กฎ`}
               </span>
             </div>
 

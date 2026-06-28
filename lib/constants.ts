@@ -99,6 +99,17 @@ export const RAMP = [
 
 export const MARKED_ROAS_MULTIPLIER = 1.2;
 
+/** Default thresholds applied to user-added catalog products (editable later in Product KPI). */
+export const DEFAULT_THRESHOLDS = {
+  roas: 4,
+  ctr: 1.5,
+  cpa: 100,
+  cpm: 100,
+  cpp: 160,
+  cpr: 60,
+  cost: 1000,
+} as const;
+
 /** Creative format → thumb icon + color (DESIGN §4.3). */
 export const FORMAT_META: Record<CreativeFormat, { icon: string; color: string }> = {
   Video: { icon: "▶", color: "#d6453d" },

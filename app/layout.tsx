@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans_Thai, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/store/AppProvider";
+import { ThemeSync } from "@/components/shell/ThemeSync";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { KpiSummaryStrip } from "@/components/shell/KpiSummaryStrip";
@@ -32,6 +33,7 @@ export default function RootLayout({
     <html lang="th" className={`${plexThai.variable} ${plexMono.variable}`}>
       <body className="font-sans text-ink">
         <AppProvider>
+          <ThemeSync />
           <div className="flex min-h-screen bg-page-bg">
             <Sidebar />
             <main className="flex min-w-0 flex-1 flex-col">

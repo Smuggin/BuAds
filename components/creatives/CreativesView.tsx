@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { getCampaigns, getCreatives, getProducts } from "@/lib/api";
 import { ACCOUNT_META, FORMAT_META } from "@/lib/constants";
 import { filterCreatives, skusInAccount } from "@/lib/creatives";
-import { fmtMoney, roasColor, round1 } from "@/lib/format";
-import { useAppStore } from "@/store/AppProvider";
+import { fmtMoney, round1 } from "@/lib/format";
+import { useAppStore, usePerfColor } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 import { CreativeDetail } from "./CreativeDetail";
 import type { AccountKey, Campaign, Creative, Product } from "@/data/types";
@@ -23,6 +23,7 @@ export function CreativesView() {
   const selectCreative = useAppStore((s) => s.selectCreative);
   const setMediaAcc = useAppStore((s) => s.setMediaAcc);
   const setMediaProd = useAppStore((s) => s.setMediaProd);
+  const pc = usePerfColor();
 
   useEffect(() => {
     let alive = true;
@@ -115,7 +116,7 @@ export function CreativesView() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-semibold text-ink">{cr.name}</div>
                     <div className="num mt-1 flex items-center gap-[10px] text-[11.5px] text-muted">
-                      <span style={{ color: roasColor(cr.roas) }}>{round1(cr.roas)}x</span>
+                      <span style={{ color: pc(cr.roas) }}>{round1(cr.roas)}x</span>
                       <span>{round1(cr.ctr)}%</span>
                       <span>{fmtMoney(cr.spend)}</span>
                     </div>

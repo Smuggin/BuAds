@@ -19,6 +19,7 @@ export type GroupSort = "perf" | "name";
 export type SortDir = "asc" | "desc";
 export type CampSortKey = MetricKey | "name" | "status" | "open" | "budget";
 export type RangeId = "7d" | "30d" | "90d";
+export type AccentKeyTheme = "blue" | "violet" | "green" | "ink";
 
 export interface BudgetModalState {
   id: string;
@@ -56,6 +57,10 @@ export const emptyNewProduct = (cat = "Skincare"): NewProductDraft => ({
 });
 
 export interface AppState {
+  // theme (DESIGN §2 tweaks)
+  accent: AccentKeyTheme;
+  colorByPerformance: boolean;
+
   // top bar
   range: RangeId;
 
@@ -76,6 +81,7 @@ export interface AppState {
   prodThr: Record<string, Partial<Thresholds>>;
   autoOverride: Record<string, boolean>;
   creativeOpen: Record<string, boolean>;
+  ruleOverride: Record<string, boolean>;
 
   // modals / in-page detail
   budgetModal: BudgetModalState | null;
@@ -104,6 +110,8 @@ export interface AppState {
 }
 
 export interface AppActions {
+  setAccent: (accent: AccentKeyTheme) => void;
+  toggleColorByPerformance: () => void;
   setRange: (range: RangeId) => void;
 
   toggleNotif: () => void;
@@ -119,6 +127,7 @@ export interface AppActions {
   setThreshold: (sku: string, key: MetricKey, value: number) => void;
   toggleAutoClose: (sku: string, base: boolean) => void;
   toggleCreativeOpen: (id: string, defaultOn: boolean) => void;
+  toggleRule: (id: string, base: boolean) => void;
 
   openBudgetModal: (id: string, draft: number) => void;
   setBudgetDraft: (draft: number) => void;
@@ -162,6 +171,8 @@ export interface AppActions {
 export type AppStore = AppState & AppActions;
 
 export const initialAppState: AppState = {
+  accent: "blue",
+  colorByPerformance: true,
   range: "30d",
   notifOpen: false,
   notifRead: false,
@@ -175,6 +186,7 @@ export const initialAppState: AppState = {
   prodThr: {},
   autoOverride: {},
   creativeOpen: {},
+  ruleOverride: {},
   budgetModal: null,
   historyModal: null,
   campDetail: null,
@@ -197,6 +209,9 @@ export function createAppStore(init: Partial<AppState> = {}) {
     ...initialAppState,
     ...init,
 
+    setAccent: (accent) => set({ accent }),
+    toggleColorByPerformance: () =>
+      set((s) => ({ colorByPerformance: !s.colorByPerformance })),
     setRange: (range) => set({ range }),
 
     toggleNotif: () => set((s) => ({ notifOpen: !s.notifOpen, notifRead: true })),
@@ -236,6 +251,11 @@ export function createAppStore(init: Partial<AppState> = {}) {
       set((s) => {
         const cur = s.creativeOpen[id] ?? defaultOn;
         return { creativeOpen: { ...s.creativeOpen, [id]: !cur } };
+      }),
+    toggleRule: (id, base) =>
+      set((s) => {
+        const cur = s.ruleOverride[id] ?? base;
+        return { ruleOverride: { ...s.ruleOverride, [id]: !cur } };
       }),
 
     openBudgetModal: (id, draft) => set({ budgetModal: { id, draft } }),

@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { CatalogView } from "@/components/catalog/CatalogView";
 
 export default function Page() {
-  return <PlaceholderView title="คลังสินค้า · Product catalog" phase="Phase 7" />;
+  return <CatalogView />;
 }

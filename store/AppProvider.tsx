@@ -7,6 +7,7 @@
  */
 import { createContext, useContext, useRef, type ReactNode } from "react";
 import { useStore } from "zustand";
+import { roasColor } from "@/lib/format";
 import { createAppStore, type AppStore } from "./useAppStore";
 
 type StoreApi = ReturnType<typeof createAppStore>;
@@ -31,4 +32,10 @@ export function useAppStore<T>(selector: (state: AppStore) => T): T {
     throw new Error("useAppStore must be used within <AppProvider>");
   }
   return useStore(store, selector);
+}
+
+/** Returns a roasColor() bound to the live colorByPerformance flag. */
+export function usePerfColor(): (v: number) => string {
+  const flag = useAppStore((s) => s.colorByPerformance);
+  return (v: number) => roasColor(v, flag);
 }
