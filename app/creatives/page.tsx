@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { CreativesView } from "@/components/creatives/CreativesView";
 
 export default function Page() {
-  return <PlaceholderView title="สื่อ/ครีเอทีฟ · Creatives" phase="Phase 5" />;
+  return <CreativesView />;
 }

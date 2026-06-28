@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { BreakdownView } from "@/components/breakdown/BreakdownView";
 
 export default function Page() {
-  return <PlaceholderView title="เจาะลึกข้อมูล · Breakdown" phase="Phase 5" />;
+  return <BreakdownView />;
 }
