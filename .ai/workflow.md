@@ -63,7 +63,27 @@ npm test        # vitest — engine + formatters
 npm run lint    # eslint + tsc --noEmit (strict)
 ```
 
-## Out of scope (for now)
+## Backend & integration track (after Phase 8)
 
-Real Meta OAuth/API, multi-user auth, persistence/back end, TikTok/Google connectors
-(TikTok shows disabled "coming soon").
+Phases 0–8 build the full UI on mock behind typed contracts. Persistence and the live
+Meta layer are deliberately deferred so the swap is one clean layer, not half-wired
+through every view. Two explicit phases follow the UI:
+
+**9. Backend & data model.** Stand up Postgres + Prisma per `.ai/schema.md`: translate the
+schema, first migration, seed from `data/*`, swap `app/api/*` bodies from mock → Prisma
+(DTOs unchanged), add write endpoints/server actions (budget, threshold, toggle, catalog,
+category) each emitting an `ActivityLog`. Optional multi-user auth.
+   ▣ **Checkpoint:** every view reads from the DB; mutations persist; `data/types.ts` DTOs unchanged.
+
+**10. Live Meta wiring.** Build `lib/meta/` (client + `map.ts`) per `.ai/meta-integration.md`,
+the Settings OAuth connect flow, token lifecycle (extend / System User), and the
+rate-limit-aware sync that upserts the cache tables.
+   ▣ **Checkpoint:** real ad-account data flows through the engine; budget/status writes hit Meta.
+
+> Schema is **designed now** (`.ai/schema.md`), **built in Phase 9**. Meta app + token +
+> endpoint catalog are already proven (`.ai/meta-integration.md`); Phase 10 is the wiring.
+
+## Out of scope (until Phases 9–10)
+
+Real Meta OAuth/API, multi-user auth, persistence/back end live in Phases 9–10 above.
+TikTok/Google connectors remain out (TikTok shows a disabled "coming soon").

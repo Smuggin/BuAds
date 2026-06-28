@@ -14,6 +14,8 @@ losers, and breaks down audience data. UI is **mixed Thai + English**.
 5. **`.ai/kpi-engine.md`** — exact spec of the engine (eval / auto-close / ranking / aggregation / budget / formatters).
 6. **`.ai/data-contracts.md`** — typed shapes (`data/types.ts`) + the `app/api/*` surface.
 7. **`.ai/workflow.md`** — plan, build order, checkpoints, Definition of Done.
+8. **`.ai/schema.md`** — backend data model (Postgres + Prisma), designed now / built Phase 9.
+9. **`.ai/meta-integration.md`** — live Meta Marketing API plan (endpoints, field→KPI map), Phase 10.
 
 When these conflict, precedence is **DESIGN.md → AGENTS.md → ARCHITECTURE.md → .ai/**.
 
