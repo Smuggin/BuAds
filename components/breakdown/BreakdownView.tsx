@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { getOverview, type OverviewData } from "@/lib/api";
-import { roasColor } from "@/lib/format";
+import { usePerfColor } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 
 export function BreakdownView() {
   const [bd, setBd] = useState<OverviewData["breakdown"] | null>(null);
+  const pc = usePerfColor();
 
   useEffect(() => {
     let alive = true;
@@ -38,7 +39,7 @@ export function BreakdownView() {
         <div className="flex h-[150px] items-end gap-3">
           {bd.age.map(([label, pct, roas]) => (
             <div key={label} className="flex h-full flex-1 flex-col items-center justify-end gap-[6px]">
-              <div className="num text-[10.5px] font-semibold" style={{ color: roasColor(roas) }}>
+              <div className="num text-[10.5px] font-semibold" style={{ color: pc(roas) }}>
                 {roas.toFixed(1)}x
               </div>
               <div className="flex w-full flex-1 items-end">
@@ -60,7 +61,7 @@ export function BreakdownView() {
               <div className="mb-[6px] flex items-center gap-2">
                 <span className="h-[9px] w-[9px] flex-shrink-0 rounded-[3px]" style={{ background: color }} />
                 <span className="flex-1 text-[12px] text-ink-2">{label}</span>
-                <span className="num text-[11px]" style={{ color: roasColor(roas) }}>{roas.toFixed(1)}x</span>
+                <span className="num text-[11px]" style={{ color: pc(roas) }}>{roas.toFixed(1)}x</span>
                 <span className="num w-[42px] text-right text-[12px] font-semibold">{pct}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-[5px] bg-[#f0f1f3]">
@@ -83,7 +84,7 @@ export function BreakdownView() {
                   <div className="h-full rounded-[5px] bg-accent" style={{ width: `${(pct / provMax) * 100}%` }} />
                 </div>
                 <span className="num w-[34px] text-right text-[11px] font-semibold text-ink">{pct}%</span>
-                <span className="num w-[42px] text-right text-[11px]" style={{ color: roasColor(roas) }}>
+                <span className="num w-[42px] text-right text-[11px]" style={{ color: pc(roas) }}>
                   {roas.toFixed(1)}x
                 </span>
               </div>

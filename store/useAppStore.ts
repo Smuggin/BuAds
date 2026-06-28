@@ -19,6 +19,7 @@ export type GroupSort = "perf" | "name";
 export type SortDir = "asc" | "desc";
 export type CampSortKey = MetricKey | "name" | "status" | "open" | "budget";
 export type RangeId = "7d" | "30d" | "90d";
+export type AccentKeyTheme = "blue" | "violet" | "green" | "ink";
 
 export interface BudgetModalState {
   id: string;
@@ -56,6 +57,10 @@ export const emptyNewProduct = (cat = "Skincare"): NewProductDraft => ({
 });
 
 export interface AppState {
+  // theme (DESIGN §2 tweaks)
+  accent: AccentKeyTheme;
+  colorByPerformance: boolean;
+
   // top bar
   range: RangeId;
 
@@ -105,6 +110,8 @@ export interface AppState {
 }
 
 export interface AppActions {
+  setAccent: (accent: AccentKeyTheme) => void;
+  toggleColorByPerformance: () => void;
   setRange: (range: RangeId) => void;
 
   toggleNotif: () => void;
@@ -164,6 +171,8 @@ export interface AppActions {
 export type AppStore = AppState & AppActions;
 
 export const initialAppState: AppState = {
+  accent: "blue",
+  colorByPerformance: true,
   range: "30d",
   notifOpen: false,
   notifRead: false,
@@ -200,6 +209,9 @@ export function createAppStore(init: Partial<AppState> = {}) {
     ...initialAppState,
     ...init,
 
+    setAccent: (accent) => set({ accent }),
+    toggleColorByPerformance: () =>
+      set((s) => ({ colorByPerformance: !s.colorByPerformance })),
     setRange: (range) => set({ range }),
 
     toggleNotif: () => set((s) => ({ notifOpen: !s.notifOpen, notifRead: true })),

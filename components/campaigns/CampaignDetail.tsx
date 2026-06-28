@@ -1,7 +1,8 @@
 "use client";
 
 import { FORMAT_META, METRIC_DEFS } from "@/lib/constants";
-import { dirSymbol, fmtK, fmtMetric, fmtMoney, roasColor } from "@/lib/format";
+import { dirSymbol, fmtK, fmtMetric, fmtMoney } from "@/lib/format";
+import { usePerfColor } from "@/store/AppProvider";
 import { aggregateProfile, evalCampaign, rankCreatives, type CampaignState, type CreativeVerdict } from "@/lib/kpi";
 import { ACCOUNT_META } from "@/lib/constants";
 import { CREATIVE_PROFILES } from "@/data/profiles";
@@ -39,6 +40,7 @@ export function CampaignDetail({
   onClose,
   onBudget,
 }: Props) {
+  const pc = usePerfColor();
   const acc = ACCOUNT_META[campaign.account];
   const ev = evalCampaign(campaign.metrics, thresholds);
   const campCreatives = creatives.filter((c) => c.campaigns.includes(campaign.id));
@@ -155,7 +157,7 @@ export function CampaignDetail({
                   </span>
                 </div>
                 <div className="num mt-[5px] flex flex-wrap items-center gap-[14px] text-[11.5px] text-muted">
-                  <span style={{ color: roasColor(r.creative.roas) }}>
+                  <span style={{ color: pc(r.creative.roas) }}>
                     ROAS {Math.round(r.creative.roas * 10) / 10}
                   </span>
                   <span>CTR {Math.round(r.creative.ctr * 10) / 10}%</span>

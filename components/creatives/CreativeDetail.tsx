@@ -1,9 +1,10 @@
 "use client";
 
 import { ACCOUNT_META, FORMAT_META } from "@/lib/constants";
-import { fmtK, fmtMoney, roasColor, round1 } from "@/lib/format";
+import { fmtK, fmtMoney, round1 } from "@/lib/format";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { effAutoClose, effThresholds } from "@/lib/resolvers";
+import { usePerfColor } from "@/store/AppProvider";
 import { CREATIVE_PROFILES } from "@/data/profiles";
 import { Card } from "@/components/ui/Card";
 import { AudienceBreakdown } from "@/components/charts/AudienceBreakdown";
@@ -18,12 +19,13 @@ interface Props {
 }
 
 export function CreativeDetail({ creative, products, campaigns, prodThr, autoOverride }: Props) {
+  const pc = usePerfColor();
   const fm = FORMAT_META[creative.format];
   const product = products.find((p) => p.sku === creative.sku)!;
 
   const tiles = [
     { l: "Spend", v: fmtMoney(creative.spend) },
-    { l: "ROAS", v: round1(creative.roas) + "x", color: roasColor(creative.roas) },
+    { l: "ROAS", v: round1(creative.roas) + "x", color: pc(creative.roas) },
     { l: "CTR", v: round1(creative.ctr) + "%" },
     { l: "Purchases", v: String(creative.purchases) },
     { l: "CPA", v: fmtMoney(creative.cpa) },
@@ -110,7 +112,7 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, autoOve
                       </div>
                     </div>
                   </td>
-                  <td className="num px-3 py-[11px] text-right font-semibold" style={{ color: roasColor(c.metrics.roas) }}>
+                  <td className="num px-3 py-[11px] text-right font-semibold" style={{ color: pc(c.metrics.roas) }}>
                     {round1(c.metrics.roas)}x
                   </td>
                   <td className="num px-3 py-[11px] text-right text-ink-2">{round1(c.metrics.ctr)}%</td>

@@ -1,13 +1,16 @@
+"use client";
+
 import { Card } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { RAMP } from "@/lib/constants";
-import { roasColor } from "@/lib/format";
+import { usePerfColor } from "@/store/AppProvider";
 import type { OverviewAccountRow } from "@/data/types";
 
 const HEAD = "px-[14px] py-[10px] text-right font-semibold";
 
 /** Consolidated ad-accounts table — perf-colored ROAS, status chips, connect CTA. */
 export function AccountsTable({ accounts }: { accounts: OverviewAccountRow[] }) {
+  const pc = usePerfColor();
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border-2 px-5 py-4">
@@ -62,7 +65,7 @@ export function AccountsTable({ accounts }: { accounts: OverviewAccountRow[] }) 
                   <td className="num px-[14px] py-[13px] text-right text-ink-2">{a.revenue}</td>
                   <td
                     className="num px-[14px] py-[13px] text-right font-semibold"
-                    style={{ color: roasColor(parseFloat(a.roas)) }}
+                    style={{ color: pc(parseFloat(a.roas)) }}
                   >
                     {a.roas}
                   </td>

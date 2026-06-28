@@ -1,7 +1,8 @@
 "use client";
 
 import { budgetSummary, scaleBudgetByPct, type CampaignState } from "@/lib/kpi";
-import { fmtMoney, roasColor } from "@/lib/format";
+import { fmtMoney } from "@/lib/format";
+import { usePerfColor } from "@/store/AppProvider";
 import type { Campaign, Product } from "@/data/types";
 
 const PCTS = [25, 50, 75, 100];
@@ -29,6 +30,7 @@ export function BudgetModal({
   onConfirm,
   onClose,
 }: Props) {
+  const pc = usePerfColor();
   const { diff, pct, monthly, util } = budgetSummary(current, draft, campaign.metrics.cost);
   const up = diff > 0;
   const down = diff < 0;
@@ -150,7 +152,7 @@ export function BudgetModal({
               ผลงานปัจจุบัน · ตรวจสอบก่อนยืนยัน
             </div>
             <div className="grid grid-cols-4 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2">
-              <Mini label="ROAS" value={`${Math.round(campaign.metrics.roas * 10) / 10}x`} color={roasColor(campaign.metrics.roas)} />
+              <Mini label="ROAS" value={`${Math.round(campaign.metrics.roas * 10) / 10}x`} color={pc(campaign.metrics.roas)} />
               <Mini label="CPA" value={fmtMoney(campaign.metrics.cpa)} />
               <Mini label="ใช้จริง/วัน" value={fmtMoney(campaign.metrics.cost)} />
               <Mini label="ใช้งบ" value={`${util}%`} />

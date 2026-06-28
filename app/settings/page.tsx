@@ -1,5 +1,5 @@
-import { PlaceholderView } from "@/components/ui/PlaceholderView";
+import { SettingsView } from "@/components/settings/SettingsView";
 
 export default function Page() {
-  return <PlaceholderView title="ตั้งค่า & เชื่อมต่อ · Settings" phase="Phase 7" />;
+  return <SettingsView />;
 }
