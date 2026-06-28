@@ -1,0 +1,267 @@
+// AdsHub backend data model — see .ai/schema.md.
+// Verdict/status/on-off are NOT stored; lib/kpi.ts derives them from InsightSnapshot
+// metrics + Product thresholds at read time.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- Auth & secrets ----------------
+model User {
+  id        String        @id @default(cuid())
+  email     String        @unique
+  name      String
+  initials  String
+  role      String        @default("member")
+  createdAt DateTime      @default(now())
+  logs      ActivityLog[]
+  tokens    MetaToken[]
+}
+
+enum TokenKind {
+  USER
+  SYSTEM
+}
+
+model MetaToken {
+  id             String    @id @default(cuid())
+  kind           TokenKind
+  accessTokenEnc Bytes // encrypted at rest — never sent to client
+  scopes         String[]
+  businessId     String?
+  expiresAt      DateTime?
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  createdAt      DateTime  @default(now())
+}
+
+// ---------------- Domain ----------------
+enum ConnStatus {
+  ACTIVE
+  SYNCING
+  WARNING
+}
+
+model AdAccount {
+  id            String           @id @default(cuid())
+  metaAccountId String           @unique
+  name          String
+  platform      String
+  initials      String
+  color         String
+  currency      String           @default("THB")
+  connected     Boolean          @default(true)
+  status        ConnStatus       @default(ACTIVE)
+  lastSyncAt    DateTime?
+  products      ProductAccount[]
+  campaigns     Campaign[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isBuiltIn Boolean   @default(false)
+  products  Product[]
+}
+
+model Product {
+  id         String           @id @default(cuid())
+  sku        String           @unique
+  thName     String
+  enName     String
+  unitCost   Int
+  imgUrl     String?
+  custom     Boolean          @default(false)
+  autoClose  Boolean          @default(true)
+  categoryId String
+  category   Category         @relation(fields: [categoryId], references: [id])
+  thrRoas    Float
+  thrCtr     Float
+  thrCpa     Int
+  thrCpm     Int
+  thrCpp     Int
+  thrCpr     Int
+  thrCost    Int
+  accounts   ProductAccount[]
+  campaigns  Campaign[]
+  creatives  Creative[]
+}
+
+model ProductAccount {
+  productId   String
+  adAccountId String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  adAccount   AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@id([productId, adAccountId])
+}
+
+// ---------------- Meta cache ----------------
+enum AdStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum ChangeActor {
+  MANUAL
+  AUTO
+  META
+}
+
+model Campaign {
+  id               String             @id @default(cuid())
+  metaCampaignId   String             @unique
+  name             String
+  status           AdStatus
+  effectiveStatus  String?
+  objective        String?
+  dailyBudgetMinor Int
+  statusSource     ChangeActor        @default(META)
+  adAccountId      String
+  adAccount        AdAccount          @relation(fields: [adAccountId], references: [id])
+  productId        String?
+  product          Product?           @relation(fields: [productId], references: [id])
+  syncedAt         DateTime
+  adsets           AdSet[]
+  creatives        CampaignCreative[]
+  insights         InsightSnapshot[]
+}
+
+model AdSet {
+  id               String   @id @default(cuid())
+  metaAdSetId      String   @unique
+  campaignId       String
+  campaign         Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name             String
+  status           AdStatus
+  dailyBudgetMinor Int?
+  optimizationGoal String?
+  billingEvent     String?
+  targeting        Json?
+  syncedAt         DateTime
+}
+
+enum CreativeFormat {
+  VIDEO
+  REELS
+  CAROUSEL
+  IMAGE
+}
+
+model Creative {
+  id             String             @id @default(cuid())
+  metaCreativeId String             @unique
+  name           String
+  format         CreativeFormat
+  thumbnailUrl   String?
+  profileKey     String? // mock audience profile key (A/B/C); real path uses InsightSnapshot.audience
+  productId      String?
+  product        Product?           @relation(fields: [productId], references: [id])
+  syncedAt       DateTime
+  campaigns      CampaignCreative[]
+  insights       InsightSnapshot[]
+}
+
+model CampaignCreative {
+  campaignId String
+  creativeId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creative   Creative @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, creativeId])
+}
+
+enum InsightLevel {
+  ACCOUNT
+  CAMPAIGN
+  ADSET
+  AD
+  CREATIVE
+}
+
+model InsightSnapshot {
+  id          String       @id @default(cuid())
+  level       InsightLevel
+  window      String
+  campaignId  String?
+  creativeId  String?
+  adAccountId String?
+  campaign    Campaign?    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creative    Creative?    @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  spend       Decimal
+  impressions Int
+  clicks      Int
+  ctr         Float
+  cpm         Float
+  reach       Int
+  frequency   Float
+  roas        Float
+  purchases   Int
+  cpa         Float
+  cpp         Float
+  cpr         Float
+  audience    Json?
+  fetchedAt   DateTime
+
+  @@index([level, window, campaignId])
+  @@index([level, window, creativeId])
+}
+
+// ---------------- Automation · Activity · Notifications ----------------
+model Rule {
+  id          String        @id @default(cuid())
+  name        String
+  scope       String
+  ifCondition String
+  thenAction  String
+  type        String
+  tone        String
+  runs        Int           @default(0)
+  lastRunAt   DateTime?
+  on          Boolean       @default(true)
+  metaRuleId  String?
+  logs        ActivityLog[]
+}
+
+enum LogType {
+  BUDGET_UP
+  BUDGET_DOWN
+  PAUSE
+  RESUME
+  AUTO_CLOSE
+  SCALE
+  KPI_EDIT
+}
+
+model ActivityLog {
+  id         String      @id @default(cuid())
+  occurredAt DateTime    @default(now())
+  actor      ChangeActor
+  userId     String?
+  ruleId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  rule       Rule?       @relation(fields: [ruleId], references: [id])
+  type       LogType
+  campaignId String?
+  productId  String?
+  title      String
+  detail     String
+  beforeVal  String?
+  afterVal   String?
+
+  @@index([occurredAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  kind      String
+  title     String
+  detail    String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+}

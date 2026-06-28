@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getProducts } from "@/lib/api";
+import { getProducts, patchProduct } from "@/lib/api";
 import { METRIC_DEFS, RAMP } from "@/lib/constants";
 import { effAutoClose, effThresholds } from "@/lib/resolvers";
 import { dirSymbol } from "@/lib/format";
@@ -91,7 +91,10 @@ export function ProductKpiView() {
                           money={m.money}
                           suffix={m.suffix}
                           value={thr[m.key as MetricKey]}
-                          onChange={(v) => setThreshold(p.sku, m.key as MetricKey, v)}
+                          onChange={(v) => {
+                            setThreshold(p.sku, m.key as MetricKey, v); // optimistic (live re-judge)
+                            void patchProduct(p.sku, { thresholds: { [m.key]: v } }); // persist
+                          }}
                         />
                       </td>
                     ))}
@@ -99,7 +102,10 @@ export function ProductKpiView() {
                       <div className="flex justify-center">
                         <Toggle
                           on={auto}
-                          onClick={() => toggleAutoClose(p.sku, p.autoClose)}
+                          onClick={() => {
+                            toggleAutoClose(p.sku, p.autoClose); // optimistic
+                            void patchProduct(p.sku, { autoClose: !auto }); // persist
+                          }}
                           label={`ปิดอัตโนมัติ ${p.th}`}
                         />
                       </div>

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { DEFAULT_CATEGORIES } from "@/data/categories";
+import { prisma } from "@/lib/db";
 
-export function GET() {
-  return NextResponse.json(DEFAULT_CATEGORIES);
+export async function GET() {
+  const cats = await prisma.category.findMany({
+    orderBy: [{ isBuiltIn: "desc" }, { name: "asc" }],
+  });
+  return NextResponse.json(cats.map((c) => c.name));
 }
