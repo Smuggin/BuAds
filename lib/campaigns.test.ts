@@ -24,7 +24,7 @@ describe("buildCampaignGroups", () => {
     const { groups } = buildCampaignGroups(base());
     expect(groups).toHaveLength(PRODUCTS.length);
     for (const g of groups) {
-      expect(g.rows.every((r) => r.product.sku === g.key)).toBe(true);
+      expect(g.rows.every((r) => r.product?.sku === g.key)).toBe(true);
     }
   });
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getCampaigns, getCreatives, getLogs, getProducts } from "@/lib/api";
-import { ACCOUNT_META, firstSortDir } from "@/lib/constants";
+import { accountMetaFor, firstSortDir } from "@/lib/constants";
 import { buildCampaignGroups, type CampSortKey } from "@/lib/campaigns";
 import { effAutoClose, effBudget, effThresholds } from "@/lib/resolvers";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
@@ -123,7 +123,7 @@ export function CampaignsView() {
             <BudgetModal
               campaign={c}
               product={p}
-              accountTh={ACCOUNT_META[c.account].th}
+              accountTh={accountMetaFor(c.account).th}
               current={effBudget(c, budgetOverride)}
               draft={budgetModal.draft}
               state={resolveState(c)}
@@ -144,7 +144,7 @@ export function CampaignsView() {
             <HistoryModal
               campaign={c}
               product={p}
-              accountTh={ACCOUNT_META[c.account].th}
+              accountTh={accountMetaFor(c.account).th}
               entries={logs.filter((e) => e.campaignId === historyModal)}
               onClose={closeHistory}
             />

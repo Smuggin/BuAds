@@ -3,7 +3,9 @@
  * Verdict / status / on-off are NEVER stored here; they are derived by lib/kpi.ts.
  */
 
-export type AccountKey = "SKIN" | "MAIN" | "FASH" | "LAZ";
+// Account relation key. Demo data uses SKIN/MAIN/FASH/LAZ; live Meta data uses
+// real `act_…` ids — so this is a widened string (use accountMetaFor() for display).
+export type AccountKey = string;
 
 export type MetricKey = "roas" | "ctr" | "cpa" | "cpm" | "cpp" | "cpr" | "cost";
 export type MetricDir = "min" | "max";

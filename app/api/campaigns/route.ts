@@ -3,7 +3,9 @@ import { prisma } from "@/lib/db";
 import type { AccountKey, Campaign } from "@/data/types";
 
 export async function GET() {
+  // Active campaigns only — keeps the view useful (paused/historical stay in the DB).
   const rows = await prisma.campaign.findMany({
+    where: { status: "ACTIVE" },
     include: { adAccount: true, insights: { where: { window: "last_30d" }, take: 1 } },
     orderBy: { metaCampaignId: "asc" },
   });

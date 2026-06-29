@@ -4,7 +4,7 @@ import { FORMAT_META, METRIC_DEFS } from "@/lib/constants";
 import { dirSymbol, fmtK, fmtMetric, fmtMoney } from "@/lib/format";
 import { usePerfColor } from "@/store/AppProvider";
 import { aggregateProfile, evalCampaign, rankCreatives, type CampaignState, type CreativeVerdict } from "@/lib/kpi";
-import { ACCOUNT_META } from "@/lib/constants";
+import { accountMetaFor } from "@/lib/constants";
 import { CREATIVE_PROFILES } from "@/data/profiles";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
@@ -41,7 +41,7 @@ export function CampaignDetail({
   onBudget,
 }: Props) {
   const pc = usePerfColor();
-  const acc = ACCOUNT_META[campaign.account];
+  const acc = accountMetaFor(campaign.account);
   const ev = evalCampaign(campaign.metrics, thresholds);
   const campCreatives = creatives.filter((c) => c.campaigns.includes(campaign.id));
   const { ranked, openCount } = rankCreatives(campCreatives, thresholds, creativeOpen);

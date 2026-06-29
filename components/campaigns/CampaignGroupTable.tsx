@@ -143,7 +143,7 @@ export function CampaignGroupTable({
                     <td key={cell.key} className="border-t border-border-2 px-[11px] py-3 text-right">
                       <span
                         className="num text-[12px] font-semibold"
-                        style={{ color: cell.ok ? "#1f8a5b" : "#d6453d" }}
+                        style={{ color: r.unmapped ? "#3a3f47" : cell.ok ? "#1f8a5b" : "#d6453d" }}
                       >
                         {cell.disp}
                       </span>

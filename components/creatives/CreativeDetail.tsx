@@ -1,6 +1,6 @@
 "use client";
 
-import { ACCOUNT_META, FORMAT_META } from "@/lib/constants";
+import { accountMetaFor, FORMAT_META } from "@/lib/constants";
 import { fmtK, fmtMoney, round1 } from "@/lib/format";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { effAutoClose, effThresholds } from "@/lib/resolvers";
@@ -39,7 +39,7 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, autoOve
     const thr = effThresholds(p, prodThr);
     const ev = evalCampaign(c.metrics, thr);
     const st = resolveCampaignState(ev.verdict, effAutoClose(p, autoOverride), undefined);
-    return { c, acc: ACCOUNT_META[c.account].th, st };
+    return { c, acc: accountMetaFor(c.account).th, st };
   });
 
   return (
