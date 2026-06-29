@@ -8,13 +8,19 @@
  */
 import { prisma } from "@/lib/db";
 import { accountMetaFor } from "@/lib/constants";
+import { evalCampaign } from "@/lib/kpi";
 import { graphGet, graphGetAll } from "./client";
 import { getActiveToken } from "./auth";
-import { insightMetrics, toAdStatus, type MetaInsightRow } from "./map";
+import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
+import { setCampaignStatus } from "./mutations";
 import { matchCampaignToProduct } from "./productMatch";
 
 const INSIGHT_FIELDS =
   "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpm,reach,frequency,purchase_roas,actions,cost_per_action_type";
+
+// Auto-close write-back to Meta (pauses losers) is OPT-IN — off until tested.
+// Set META_AUTO_CLOSE=on to enable; otherwise breaching campaigns are flag-only.
+const AUTO_CLOSE_ENABLED = (process.env.META_AUTO_CLOSE ?? "off").toLowerCase() === "on";
 
 interface MetaAccount { account_id: string; name: string; currency?: string; account_status?: number }
 interface MetaCampaign { id: string; name: string; status?: string; effective_status?: string; objective?: string; daily_budget?: string }
@@ -23,12 +29,13 @@ export interface SyncResult {
   accounts: number;
   campaigns: number;
   insights: number;
+  autoClosed: number;
   startedAt: string;
   errors: string[];
 }
 
 /** All ad accounts the token can reach: personal + every business's owned/client accounts. */
-async function gatherAccounts(token: string): Promise<MetaAccount[]> {
+export async function gatherAccounts(token: string): Promise<MetaAccount[]> {
   const map = new Map<string, MetaAccount>();
   const add = (a: MetaAccount) => {
     if (a.account_id && !map.has(a.account_id)) map.set(a.account_id, a);
@@ -55,7 +62,7 @@ async function gatherAccounts(token: string): Promise<MetaAccount[]> {
 export async function runSync(): Promise<SyncResult> {
   const startedAt = new Date().toISOString();
   const token = await getActiveToken();
-  const counts: SyncResult = { accounts: 0, campaigns: 0, insights: 0, startedAt, errors: [] };
+  const counts: SyncResult = { accounts: 0, campaigns: 0, insights: 0, autoClosed: 0, startedAt, errors: [] };
 
   const allow = (process.env.META_AD_ACCOUNTS || "")
     .split(",")
@@ -82,8 +89,12 @@ export async function runSync(): Promise<SyncResult> {
       counts.accounts++;
 
       const products = await prisma.product.findMany({
-        select: { id: true, sku: true, thName: true, enName: true },
+        select: {
+          id: true, sku: true, thName: true, autoClose: true,
+          thrRoas: true, thrCtr: true, thrCpa: true, thrCpm: true, thrCpp: true, thrCpr: true, thrCost: true,
+        },
       });
+      const productById = new Map(products.map((p) => [p.id, p]));
 
       // 1. delivering campaigns (last 30d) — names + metrics come from insights
       const ins = await graphGet<{ data: (MetaInsightRow & { campaign_id?: string; campaign_name?: string })[] }>(
@@ -112,13 +123,18 @@ export async function runSync(): Promise<SyncResult> {
         const name = c?.name ?? delivering.get(id)?.campaign_name ?? "Campaign";
         const existing = await prisma.campaign.findUnique({ where: { metaCampaignId: id } });
         const productId = existing?.productId ?? matchCampaignToProduct(name, products);
+        const metaStatus = toAdStatus(c?.status);
+        // Keep our own marker (AUTO/MANUAL) while Meta's status is unchanged since the
+        // last snapshot; a change on Meta's side resets it to META.
+        const statusSource =
+          existing && existing.status === metaStatus ? existing.statusSource : "META";
         const data = {
           name,
-          status: toAdStatus(c?.status),
+          status: metaStatus,
           effectiveStatus: c?.effective_status,
           objective: c?.objective,
           dailyBudgetMinor: c?.daily_budget ? parseInt(c.daily_budget) : 0,
-          statusSource: "META" as const,
+          statusSource,
           adAccountId: account.id,
           productId,
           syncedAt: new Date(),
@@ -135,6 +151,38 @@ export async function runSync(): Promise<SyncResult> {
             data: { level: "CAMPAIGN", window: "last_30d", campaignId: camp.id, ...insightMetrics(row), fetchedAt: new Date() },
           });
           counts.insights++;
+        }
+
+        // Auto-close: pause a still-active, breaching campaign in Meta when its
+        // product opts in. Skips a campaign a human deliberately set (MANUAL).
+        const product = productId ? productById.get(productId) : undefined;
+        if (
+          AUTO_CLOSE_ENABLED &&
+          row &&
+          product?.autoClose &&
+          metaStatus === "ACTIVE" &&
+          statusSource !== "MANUAL"
+        ) {
+          const m = insightMetrics(row);
+          const verdict = evalCampaign(
+            { roas: m.roas, ctr: m.ctr, cpa: m.cpa, cpm: m.cpm, cpp: m.cpp, cpr: m.cpr, cost: m.spend / INSIGHT_WINDOW_DAYS },
+            { roas: product.thrRoas, ctr: product.thrCtr, cpa: product.thrCpa, cpm: product.thrCpm, cpp: product.thrCpp, cpr: product.thrCpr, cost: product.thrCost },
+          ).verdict;
+          if (verdict === "breach") {
+            try {
+              await setCampaignStatus(id, "PAUSED", token);
+              await prisma.campaign.update({
+                where: { metaCampaignId: id },
+                data: { status: "PAUSED", statusSource: "AUTO" },
+              });
+              await prisma.activityLog.create({
+                data: { actor: "AUTO", type: "AUTO_CLOSE", campaignId: camp.id, productId, title: "ปิดแคมเปญอัตโนมัติ", detail: `${name} · เกินเกณฑ์ KPI` },
+              });
+              counts.autoClosed++;
+            } catch (e) {
+              counts.errors.push(`autoclose ${id}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }
         }
       }
     } catch (e) {

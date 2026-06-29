@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import type { MetricKey } from "@/data/types";
+import type { AccountKey, MetricKey } from "@/data/types";
 
 const THR_COLUMN: Record<MetricKey, string> = {
   roas: "thrRoas",
@@ -12,37 +13,91 @@ const THR_COLUMN: Record<MetricKey, string> = {
   cost: "thrCost",
 };
 
-/** Persist a product threshold edit or auto-close change, + an ActivityLog row. */
+type PatchBody = {
+  thresholds?: Partial<Record<MetricKey, number>>;
+  autoClose?: boolean;
+  th?: string;
+  category?: string;
+  unitCost?: number;
+  img?: string | null;
+  accounts?: AccountKey[];
+};
+
+/** Persist a product edit — profile (name/category/cost/img/accounts) or KPI
+ *  threshold / auto-close — to the DB, + an ActivityLog row. */
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ sku: string }> },
 ) {
   const { sku } = await params;
-  const body = (await req.json()) as {
-    thresholds?: Partial<Record<MetricKey, number>>;
-    autoClose?: boolean;
-  };
+  const body = (await req.json().catch(() => null)) as PatchBody | null;
+  if (!body) return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   const product = await prisma.product.findUnique({ where: { sku } });
   if (!product) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const data: Record<string, number | boolean> = {};
-  let detail = "";
+  const data: Record<string, unknown> = {};
+  const details: string[] = [];
+
   if (body.thresholds) {
     for (const [k, v] of Object.entries(body.thresholds)) {
       data[THR_COLUMN[k as MetricKey]] = v as number;
-      detail = `${k.toUpperCase()} → ${v}`;
+      details.push(`${k.toUpperCase()} → ${v}`);
     }
   }
   if (typeof body.autoClose === "boolean") {
     data.autoClose = body.autoClose;
-    detail = `ปิดอัตโนมัติ → ${body.autoClose ? "เปิด" : "ปิด"}`;
+    details.push(`ปิดอัตโนมัติ → ${body.autoClose ? "เปิด" : "ปิด"}`);
   }
-  if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "no changes" }, { status: 400 });
+  if (typeof body.th === "string" && body.th.trim()) {
+    data.thName = body.th.trim();
+    details.push(`ชื่อ → ${body.th.trim()}`);
+  }
+  if (typeof body.unitCost === "number") {
+    data.unitCost = Math.round(body.unitCost) || 0;
+    details.push(`ต้นทุน → ${data.unitCost}`);
+  }
+  if (body.img !== undefined) data.imgUrl = body.img;
+  if (typeof body.category === "string" && body.category.trim()) {
+    const catName = body.category.trim();
+    let category = await prisma.category.findFirst({
+      where: { name: { equals: catName, mode: "insensitive" } },
+    });
+    category ??= await prisma.category.create({ data: { name: catName } });
+    data.categoryId = category.id;
+    details.push(`หมวด → ${catName}`);
   }
 
-  await prisma.product.update({ where: { sku }, data });
+  // accounts: replace the ProductAccount join rows when provided
+  let accountsChanged = false;
+  if (Array.isArray(body.accounts)) {
+    const accounts = body.accounts.length
+      ? await prisma.adAccount.findMany({ where: { metaAccountId: { in: body.accounts } } })
+      : [];
+    await prisma.productAccount.deleteMany({ where: { productId: product.id } });
+    if (accounts.length) {
+      await prisma.productAccount.createMany({
+        data: accounts.map((a) => ({ productId: product.id, adAccountId: a.id })),
+      });
+    }
+    accountsChanged = true;
+    details.push("บัญชี");
+  }
+
+  const hasScalarChanges = Object.keys(data).length > 0;
+  if (!hasScalarChanges && !accountsChanged) {
+    return NextResponse.json({ error: "no changes" }, { status: 400 });
+  }
+  if (hasScalarChanges) {
+    await prisma.product.update({ where: { sku }, data: data as Prisma.ProductUpdateInput });
+  }
+
+  const isProfileEdit =
+    body.th !== undefined ||
+    body.category !== undefined ||
+    body.unitCost !== undefined ||
+    body.img !== undefined ||
+    accountsChanged;
 
   const user = await prisma.user.findFirst();
   await prisma.activityLog.create({
@@ -51,10 +106,23 @@ export async function PATCH(
       userId: user?.id,
       type: "KPI_EDIT",
       productId: product.id,
-      title: "แก้เกณฑ์ KPI สินค้า",
-      detail: `${product.thName} · ${detail}`,
+      title: isProfileEdit ? "แก้ไขสินค้า" : "แก้เกณฑ์ KPI สินค้า",
+      detail: `${data.thName ?? product.thName} · ${details.join(" · ")}`,
     },
   });
 
+  return NextResponse.json({ ok: true });
+}
+
+/** Delete a product (ProductAccount links cascade; campaigns/creatives unlink). */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ sku: string }> },
+) {
+  const { sku } = await params;
+  const product = await prisma.product.findUnique({ where: { sku } });
+  if (!product) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  await prisma.product.delete({ where: { sku } });
   return NextResponse.json({ ok: true });
 }

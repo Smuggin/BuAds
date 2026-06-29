@@ -79,13 +79,21 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
       disp: fmtMetric(m.key, c.metrics[m.key]),
       ok: true,
     }));
-    const on = params.campOverride[c.id] ?? true;
+    const metaActive = c.status === "ACTIVE";
+    const on = params.campOverride[c.id] ?? metaActive;
     return {
       campaign: c,
       product: null,
       thresholds: null,
       evalResult: { cells, breaches: 0, passAll: true, verdict: "running" },
-      state: { closedAuto: false, defaultOn: true, on, statusLabel: "ยังไม่จับคู่", statusColor: "#6b7280", statusIcon: "●" },
+      state: {
+        shouldClose: false,
+        defaultOn: metaActive,
+        on,
+        statusLabel: on ? "ยังไม่จับคู่" : "ปิดอยู่",
+        statusColor: "#6b7280",
+        statusIcon: on ? "●" : "⏸",
+      },
       budget: effBudget(c, params.budgetOverride),
       budgetChanged: false,
       statusRank: 1,
@@ -98,7 +106,12 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
   const thresholds = effThresholds(p, params.prodThr);
   const auto = effAutoClose(p, params.autoOverride);
   const evalResult = evalCampaign(c.metrics, thresholds);
-  const state = resolveCampaignState(evalResult.verdict, auto, params.campOverride[c.id]);
+  const state = resolveCampaignState(
+    evalResult.verdict,
+    auto,
+    params.campOverride[c.id],
+    c.status === "ACTIVE",
+  );
   const budget = effBudget(c, params.budgetOverride);
   const ov = params.budgetOverride[c.id];
   const budgetChanged = ov != null && ov !== c.budget;
@@ -108,7 +121,7 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
     evalResult.verdict === "marked"
       ? "ROAS เกินเกณฑ์ · พร้อม Scale"
       : evalResult.verdict === "breach"
-        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${auto ? " · ปิดให้แล้ว" : " · รอตรวจสอบ"}`
+        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${auto ? " · แนะนำให้ปิด" : " · รอตรวจสอบ"}`
         : "อยู่ในเกณฑ์ที่ตั้งไว้";
   return {
     campaign: c,
@@ -225,7 +238,7 @@ function makeGroup(
     return {
       kind, key, marked, closed, count, rows,
       title: product.th,
-      subtitle: `${product.en} · ${product.sku} · ${count} แคมเปญ`,
+      subtitle: `${product.sku} · ${count} แคมเปญ`,
       initials: product.sku.slice(0, 2),
       color: RAMP[pi % RAMP.length],
       hasAuto: true,

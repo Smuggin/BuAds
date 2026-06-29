@@ -19,6 +19,10 @@ export interface MetaInsightRow {
   cost_per_action_type?: { action_type: string; value: string }[];
 }
 
+/** Synced insight window length. The `cost` KPI is daily (Cost/วัน), so spend is
+ *  averaged over this many days rather than compared as a 30-day total. */
+export const INSIGHT_WINDOW_DAYS = 30;
+
 const PURCHASE_TYPES = ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"];
 
 const num = (s: string | undefined): number => (s ? parseFloat(s) : 0);

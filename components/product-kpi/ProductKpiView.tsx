@@ -79,9 +79,7 @@ export function ProductKpiView() {
                         </div>
                         <div className="leading-[1.2]">
                           <div className="font-semibold text-ink">{p.th}</div>
-                          <div className="num text-[11px] text-muted-2">
-                            {p.en} · {p.sku}
-                          </div>
+                          <div className="num text-[11px] text-muted-2">{p.sku}</div>
                         </div>
                       </div>
                     </td>
@@ -93,7 +91,7 @@ export function ProductKpiView() {
                           value={thr[m.key as MetricKey]}
                           onChange={(v) => {
                             setThreshold(p.sku, m.key as MetricKey, v); // optimistic (live re-judge)
-                            void patchProduct(p.sku, { thresholds: { [m.key]: v } }); // persist
+                            patchProduct(p.sku, { thresholds: { [m.key]: v } }).catch(() => {}); // persist
                           }}
                         />
                       </td>
@@ -104,7 +102,7 @@ export function ProductKpiView() {
                           on={auto}
                           onClick={() => {
                             toggleAutoClose(p.sku, p.autoClose); // optimistic
-                            void patchProduct(p.sku, { autoClose: !auto }); // persist
+                            patchProduct(p.sku, { autoClose: !auto }).catch(() => {}); // persist
                           }}
                           label={`ปิดอัตโนมัติ ${p.th}`}
                         />

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getCampaigns, getCreatives, getLogs, getProducts } from "@/lib/api";
+import { assignCampaignProduct, getCampaigns, getCreatives, getLogs, getProducts, runStatusSync } from "@/lib/api";
 import { accountMetaFor, firstSortDir } from "@/lib/constants";
 import { buildCampaignGroups, type CampSortKey } from "@/lib/campaigns";
 import { effAutoClose, effBudget, effThresholds } from "@/lib/resolvers";
@@ -10,6 +10,7 @@ import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { useAppStore } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 import { CampaignGroupTable } from "./CampaignGroupTable";
+import { AssignSkuModal } from "./AssignSkuModal";
 import { BudgetModal } from "./BudgetModal";
 import { HistoryModal } from "./HistoryModal";
 import { CampaignDetail } from "./CampaignDetail";
@@ -30,6 +31,7 @@ export function CampaignsView() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [creatives, setCreatives] = useState<Creative[] | null>(null);
   const [logs, setLogs] = useState<LogEntry[] | null>(null);
+  const [assigning, setAssigning] = useState(false);
 
   // store
   const groupBy = useAppStore((s) => s.groupBy);
@@ -43,6 +45,7 @@ export function CampaignsView() {
   const campOverride = useAppStore((s) => s.campOverride);
   const campDetail = useAppStore((s) => s.campDetail);
   const budgetModal = useAppStore((s) => s.budgetModal);
+  const assignModal = useAppStore((s) => s.assignModal);
   const historyModal = useAppStore((s) => s.historyModal);
   const creativeOpen = useAppStore((s) => s.creativeOpen);
 
@@ -55,6 +58,9 @@ export function CampaignsView() {
   const setBudgetDraft = useAppStore((s) => s.setBudgetDraft);
   const setBudgetOverride = useAppStore((s) => s.setBudgetOverride);
   const closeBudgetModal = useAppStore((s) => s.closeBudgetModal);
+  const openAssign = useAppStore((s) => s.openAssign);
+  const setAssignDraft = useAppStore((s) => s.setAssignDraft);
+  const closeAssign = useAppStore((s) => s.closeAssign);
   const openHistory = useAppStore((s) => s.openHistory);
   const closeHistory = useAppStore((s) => s.closeHistory);
   const openCampDetail = useAppStore((s) => s.openCampDetail);
@@ -77,6 +83,22 @@ export function CampaignsView() {
     };
   }, []);
 
+  // Near-realtime on/off: refetch the (background-poller-refreshed) cache every 120s,
+  // and pull a fresh status the moment the tab regains focus, so the toggles track
+  // Meta Business Suite without a manual sync.
+  useEffect(() => {
+    const refetch = () => getCampaigns().then(setCampaigns).catch(() => {});
+    const interval = setInterval(refetch, 120_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void runStatusSync().then(refetch);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   if (!products || !campaigns || !creatives || !logs) {
     return (
       <div className="flex animate-pulse flex-col gap-4">
@@ -89,11 +111,12 @@ export function CampaignsView() {
 
   const productBySku = (sku: string) => products.find((p) => p.sku === sku)!;
   const campaignById = (id: string) => campaigns.find((c) => c.id === id)!;
+  const loadCampaigns = () => getCampaigns().then(setCampaigns);
   const resolveState = (c: Campaign) => {
     const p = productBySku(c.sku);
     const thr = effThresholds(p, prodThr);
     const ev = evalCampaign(c.metrics, thr);
-    return resolveCampaignState(ev.verdict, effAutoClose(p, autoOverride), campOverride[c.id]);
+    return resolveCampaignState(ev.verdict, effAutoClose(p, autoOverride), campOverride[c.id], c.status === "ACTIVE");
   };
 
   const { groups, summary } = buildCampaignGroups({
@@ -115,6 +138,32 @@ export function CampaignsView() {
   // overlays (can open from list or detail)
   const overlays = (
     <>
+      {assignModal &&
+        (() => {
+          const c = campaignById(assignModal.campaignId);
+          return (
+            <AssignSkuModal
+              campaign={c}
+              products={products}
+              draftSku={assignModal.draftSku}
+              saving={assigning}
+              onSetDraft={setAssignDraft}
+              onConfirm={async () => {
+                setAssigning(true);
+                try {
+                  await assignCampaignProduct(c.id, assignModal.draftSku || null);
+                  await loadCampaigns();
+                  closeAssign();
+                } catch (e) {
+                  alert(e instanceof Error ? e.message : "จับคู่สินค้าไม่สำเร็จ");
+                } finally {
+                  setAssigning(false);
+                }
+              }}
+              onClose={closeAssign}
+            />
+          );
+        })()}
       {budgetModal &&
         (() => {
           const c = campaignById(budgetModal.id);
@@ -250,6 +299,7 @@ export function CampaignsView() {
           onOpenDetail={openCampDetail}
           onHistory={openHistory}
           onBudget={(id) => openBudgetModal(id, effBudget(campaignById(id), budgetOverride))}
+          onAssign={(id) => openAssign(id, campaignById(id).sku)}
           onToggle={toggleCamp}
         />
       ))}

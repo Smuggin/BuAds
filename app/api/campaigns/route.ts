@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { INSIGHT_WINDOW_DAYS } from "@/lib/meta/map";
 import type { AccountKey, Campaign } from "@/data/types";
 
 export async function GET() {
@@ -17,6 +18,7 @@ export async function GET() {
       id: c.metaCampaignId,
       name: c.name,
       sku: "", // filled below
+      status: c.status, // real Meta on/off (mirrors Business Suite)
       account: c.adAccount.metaAccountId as AccountKey,
       budget: c.dailyBudgetMinor / 100,
       metrics: {
@@ -26,7 +28,7 @@ export async function GET() {
         cpm: i?.cpm ?? 0,
         cpp: i?.cpp ?? 0,
         cpr: i?.cpr ?? 0,
-        cost: i ? Number(i.spend) : 0,
+        cost: i ? Number(i.spend) / INSIGHT_WINDOW_DAYS : 0, // daily cost (Cost/วัน)
       },
     };
   });

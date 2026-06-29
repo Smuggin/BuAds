@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getProducts, getSettings } from "@/lib/api";
+import { getProducts, getSettings, runMetaSync } from "@/lib/api";
 import { allCategories, effProduct, isConnected } from "@/lib/resolvers";
 import { DEFAULT_CATEGORIES } from "@/data/categories";
 import { useAppStore } from "@/store/AppProvider";
@@ -32,12 +32,12 @@ interface SettingsData {
 export function SettingsView() {
   const [data, setData] = useState<SettingsData | null>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
+  const [syncingNow, setSyncingNow] = useState(false);
 
   const connOverride = useAppStore((s) => s.connOverride);
   const syncMap = useAppStore((s) => s.syncMap);
   const connectAccount = useAppStore((s) => s.connectAccount);
   const disconnectAccount = useAppStore((s) => s.disconnectAccount);
-  const resyncAccount = useAppStore((s) => s.resyncAccount);
   const customCats = useAppStore((s) => s.customCats);
   const customProducts = useAppStore((s) => s.customProducts);
   const prodEdits = useAppStore((s) => s.prodEdits);
@@ -93,13 +93,45 @@ export function SettingsView() {
     background: color,
   });
 
+  const reload = () =>
+    Promise.all([getSettings(), getProducts()]).then(([s, p]) => {
+      setData(s);
+      setProducts(p);
+    });
+
+  const onSync = async () => {
+    if (syncingNow) return;
+    setSyncingNow(true);
+    try {
+      const r = await runMetaSync();
+      await reload();
+      const closed = r.autoClosed ? ` · ปิดอัตโนมัติ ${r.autoClosed}` : "";
+      const msg = `ซิงค์สำเร็จ · ${r.accounts} บัญชี · ${r.campaigns} แคมเปญ · ${r.insights} insights${closed}`;
+      alert(r.errors.length ? `${msg}\nมีข้อผิดพลาดบางบัญชี: ${r.errors.join("; ")}` : msg);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "ซิงค์ไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Meta");
+    } finally {
+      setSyncingNow(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      <section className="rounded-card bg-ink px-[22px] py-[17px] text-white">
-        <div className="text-[15px] font-semibold">ตั้งค่า & เชื่อมต่อ · Settings</div>
-        <div className="num mt-[2px] text-[12px] text-muted-2">
-          เชื่อมต่อแล้ว {connected.length} บัญชี · พร้อมเชื่อม {available.length} บัญชี
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-card bg-ink px-[22px] py-[17px] text-white">
+        <div>
+          <div className="text-[15px] font-semibold">ตั้งค่า & เชื่อมต่อ · Settings</div>
+          <div className="num mt-[2px] text-[12px] text-muted-2">
+            เชื่อมต่อแล้ว {connected.length} บัญชี · พร้อมเชื่อม {available.length} บัญชี
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={syncingNow}
+          className="inline-flex items-center gap-2 rounded-input bg-accent px-[15px] py-[9px] text-[12.5px] font-semibold text-white disabled:opacity-60"
+        >
+          <Icon name="refresh" size={14} /> {syncingNow ? "กำลังซิงค์…" : "ซิงค์ตอนนี้ · Sync now"}
+        </button>
       </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -153,7 +185,7 @@ export function SettingsView() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => resyncAccount(a.id)} aria-label="ซิงค์ใหม่" className="flex h-8 w-8 items-center justify-center rounded-input border border-[#dde1e7] text-slate">
+                      <button type="button" onClick={onSync} disabled={syncingNow} aria-label="ซิงค์ใหม่" className="flex h-8 w-8 items-center justify-center rounded-input border border-[#dde1e7] text-slate disabled:opacity-60">
                         <Icon name="refresh" size={14} />
                       </button>
                       <button type="button" onClick={() => disconnectAccount(a.id)} aria-label="ยกเลิกการเชื่อมต่อ" className="flex h-8 w-8 items-center justify-center rounded-input border border-[#f0d8d6] text-danger">

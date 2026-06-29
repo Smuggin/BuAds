@@ -38,7 +38,7 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, autoOve
     const p = products.find((x) => x.sku === c.sku)!;
     const thr = effThresholds(p, prodThr);
     const ev = evalCampaign(c.metrics, thr);
-    const st = resolveCampaignState(ev.verdict, effAutoClose(p, autoOverride), undefined);
+    const st = resolveCampaignState(ev.verdict, effAutoClose(p, autoOverride), undefined, c.status === "ACTIVE");
     return { c, acc: accountMetaFor(c.account).th, st };
   });
 

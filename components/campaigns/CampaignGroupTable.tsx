@@ -12,6 +12,7 @@ interface Props {
   onOpenDetail: (id: string) => void;
   onHistory: (id: string) => void;
   onBudget: (id: string) => void;
+  onAssign: (id: string) => void;
   onToggle: (id: string, defaultOn: boolean) => void;
 }
 
@@ -23,6 +24,7 @@ export function CampaignGroupTable({
   onOpenDetail,
   onHistory,
   onBudget,
+  onAssign,
   onToggle,
 }: Props) {
   const arrow = (key: CampSortKey) =>
@@ -132,6 +134,18 @@ export function CampaignGroupTable({
                         className="flex-shrink-0 rounded-[6px] px-1 py-[2px] text-[13px] leading-none text-faint-2 hover:bg-[#eef1f6] hover:text-accent"
                       >
                         ◷
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onAssign(r.campaign.id)}
+                        title="จับคู่สินค้า"
+                        className={
+                          r.unmapped
+                            ? "flex-shrink-0 rounded-[6px] bg-[#eef1f6] px-2 py-[2px] text-[10.5px] font-semibold text-accent hover:bg-[#e3e8f2]"
+                            : "flex-shrink-0 rounded-[6px] px-1 py-[2px] text-[13px] leading-none text-faint-2 hover:bg-[#eef1f6] hover:text-accent"
+                        }
+                      >
+                        {r.unmapped ? "จับคู่สินค้า" : "⊕"}
                       </button>
                     </div>
                     <div className="mt-[2px] text-[11px] text-muted-2">

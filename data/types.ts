@@ -34,7 +34,6 @@ export interface AccountMeta {
 export interface Product {
   sku: string;
   th: string;
-  en: string;
   category: string;
   accounts: AccountKey[];
   unitCost: number;
@@ -44,10 +43,14 @@ export interface Product {
   custom?: boolean;
 }
 
+/** Real on/off status from Meta (mirrors Business Suite); synced, never derived. */
+export type CampaignStatus = "ACTIVE" | "PAUSED";
+
 export interface Campaign {
   id: string;
   name: string;
   sku: string;
+  status: CampaignStatus;
   account: AccountKey;
   budget: number;
   metrics: Metrics;
