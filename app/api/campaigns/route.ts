@@ -3,11 +3,13 @@ import { prisma } from "@/lib/db";
 import type { AccountKey, Campaign } from "@/data/types";
 
 export async function GET() {
-  // Active campaigns only — keeps the view useful (paused/historical stay in the DB).
+  // Campaigns that delivered in the last 30 days (mirrors Ads Manager) — i.e. have
+  // an insight snapshot. Paused-but-delivered campaigns are included; never-delivered
+  // ones stay in the DB but out of the view.
   const rows = await prisma.campaign.findMany({
-    where: { status: "ACTIVE" },
+    where: { insights: { some: { window: "last_30d" } } },
     include: { adAccount: true, insights: { where: { window: "last_30d" }, take: 1 } },
-    orderBy: { metaCampaignId: "asc" },
+    orderBy: { syncedAt: "desc" },
   });
   const campaigns: Campaign[] = rows.map((c) => {
     const i = c.insights[0];
