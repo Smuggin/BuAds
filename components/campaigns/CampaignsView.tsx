@@ -111,7 +111,15 @@ export function CampaignsView() {
 
   const productBySku = (sku: string) => products.find((p) => p.sku === sku)!;
   const campaignById = (id: string) => campaigns.find((c) => c.id === id)!;
+  const isMapped = (c: Campaign) => products.some((p) => p.sku === c.sku);
   const loadCampaigns = () => getCampaigns().then(setCampaigns);
+  // Clicking a campaign with no product attached can't open the (product-keyed)
+  // detail — prompt to assign a product first.
+  const handleOpenDetail = (id: string) => {
+    const c = campaignById(id);
+    if (isMapped(c)) openCampDetail(id);
+    else openAssign(id, c.sku);
+  };
   const resolveState = (c: Campaign) => {
     const p = productBySku(c.sku);
     const thr = effThresholds(p, prodThr);
@@ -296,7 +304,7 @@ export function CampaignsView() {
           campSort={campSort}
           campDir={campDir}
           onSort={onSort}
-          onOpenDetail={openCampDetail}
+          onOpenDetail={handleOpenDetail}
           onHistory={openHistory}
           onBudget={(id) => openBudgetModal(id, effBudget(campaignById(id), budgetOverride))}
           onAssign={(id) => openAssign(id, campaignById(id).sku)}
