@@ -26,9 +26,13 @@ export interface BudgetModalState {
   draft: number;
 }
 
+export interface AssignModalState {
+  campaignId: string;
+  draftSku: string;
+}
+
 export interface NewProductDraft {
   th: string;
-  en: string;
   cat: string;
   sku: string;
   cost: string;
@@ -39,7 +43,6 @@ export interface NewProductDraft {
 export interface EditModalState {
   sku: string;
   th: string;
-  en: string;
   cat: string;
   cost: string;
   img: string | null;
@@ -48,7 +51,6 @@ export interface EditModalState {
 
 export const emptyNewProduct = (cat = "Skincare"): NewProductDraft => ({
   th: "",
-  en: "",
   cat,
   sku: "",
   cost: "",
@@ -85,6 +87,7 @@ export interface AppState {
 
   // modals / in-page detail
   budgetModal: BudgetModalState | null;
+  assignModal: AssignModalState | null;
   historyModal: string | null;
   campDetail: string | null;
   editModal: EditModalState | null;
@@ -133,6 +136,10 @@ export interface AppActions {
   setBudgetDraft: (draft: number) => void;
   closeBudgetModal: () => void;
 
+  openAssign: (campaignId: string, currentSku: string) => void;
+  setAssignDraft: (sku: string) => void;
+  closeAssign: () => void;
+
   openHistory: (id: string) => void;
   closeHistory: () => void;
 
@@ -151,6 +158,7 @@ export interface AppActions {
   ) => void;
   toggleNewAccount: (key: AccountKey) => void;
   addProduct: (product: Product) => void;
+  resetNewProd: () => void;
   removeCustom: (sku: string) => void;
 
   openEdit: (state: EditModalState) => void;
@@ -188,6 +196,7 @@ export const initialAppState: AppState = {
   creativeOpen: {},
   ruleOverride: {},
   budgetModal: null,
+  assignModal: null,
   historyModal: null,
   campDetail: null,
   editModal: null,
@@ -263,6 +272,12 @@ export function createAppStore(init: Partial<AppState> = {}) {
       set((s) => (s.budgetModal ? { budgetModal: { ...s.budgetModal, draft } } : {})),
     closeBudgetModal: () => set({ budgetModal: null }),
 
+    openAssign: (campaignId, currentSku) =>
+      set({ assignModal: { campaignId, draftSku: currentSku } }),
+    setAssignDraft: (sku) =>
+      set((s) => (s.assignModal ? { assignModal: { ...s.assignModal, draftSku: sku } } : {})),
+    closeAssign: () => set({ assignModal: null }),
+
     openHistory: (id) => set({ historyModal: id }),
     closeHistory: () => set({ historyModal: null }),
 
@@ -293,6 +308,7 @@ export function createAppStore(init: Partial<AppState> = {}) {
         customProducts: [...s.customProducts, product],
         newProd: emptyNewProduct(s.newProd.cat),
       })),
+    resetNewProd: () => set((s) => ({ newProd: emptyNewProduct(s.newProd.cat) })),
     removeCustom: (sku) =>
       set((s) => ({ customProducts: s.customProducts.filter((p) => p.sku !== sku) })),
 

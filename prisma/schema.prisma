@@ -21,6 +21,35 @@ model User {
   createdAt DateTime      @default(now())
   logs      ActivityLog[]
   tokens    MetaToken[]
+  uploads   Attachment[]
+}
+
+// ---------------- Object storage (Supabase Storage) ----------------
+// Bytes live in a Supabase Storage bucket; this table holds only metadata +
+// the object key (`path`) and a resolvable `url`. Never store file bytes here.
+enum AttachmentKind {
+  PRODUCT_IMAGE
+  CREATIVE
+  OTHER
+}
+
+model Attachment {
+  id           String         @id @default(cuid())
+  kind         AttachmentKind @default(OTHER)
+  bucket       String
+  path         String // object key within the bucket
+  url          String // public (or signed-base) URL used by <img src>
+  mimeType     String
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  originalName String?
+  uploadedById String?
+  uploadedBy   User?          @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime       @default(now())
+  products     Product[] // products using this as their image
+
+  @@unique([bucket, path])
 }
 
 enum TokenKind {
@@ -73,9 +102,10 @@ model Product {
   id         String           @id @default(cuid())
   sku        String           @unique
   thName     String
-  enName     String
   unitCost   Int
-  imgUrl     String?
+  imgUrl     String? // legacy/external (e.g. Meta) URL; prefer `image` relation
+  imageId    String?
+  image      Attachment?      @relation(fields: [imageId], references: [id])
   custom     Boolean          @default(false)
   autoClose  Boolean          @default(true)
   categoryId String

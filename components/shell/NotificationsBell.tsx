@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons/Icon";
-import { getRules } from "@/lib/api";
+import { getNotifications, getRules } from "@/lib/api";
 import { effRuleOn } from "@/lib/resolvers";
-import { NOTIFICATIONS } from "@/data/notifications";
-import type { NotificationKind, Rule } from "@/data/types";
+import type { Notification, NotificationKind, Rule } from "@/data/types";
 import { useAppStore } from "@/store/AppProvider";
 
 const KIND_META: Record<
@@ -27,16 +26,18 @@ export function NotificationsBell() {
   const ruleOverride = useAppStore((s) => s.ruleOverride);
 
   const [rules, setRules] = useState<Rule[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   useEffect(() => {
     let alive = true;
     getRules().then((r) => alive && setRules(r));
+    getNotifications().then((n) => alive && setNotifications(n));
     return () => {
       alive = false;
     };
   }, []);
 
-  const unread = read ? 0 : NOTIFICATIONS.length;
-  const warnCount = NOTIFICATIONS.filter((n) => n.kind === "warn").length;
+  const unread = read ? 0 : notifications.length;
+  const warnCount = notifications.filter((n) => n.kind === "warn").length;
   const activeRules = rules.filter((r) => effRuleOn(r, ruleOverride)).length;
   const offRules = rules.length - activeRules;
   const rulesOk = offRules === 0;
@@ -96,7 +97,7 @@ export function NotificationsBell() {
             </div>
 
             <div className="max-h-[380px] overflow-y-auto">
-              {NOTIFICATIONS.map((n) => {
+              {notifications.map((n) => {
                 const m = KIND_META[n.kind];
                 return (
                   <div

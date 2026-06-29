@@ -68,13 +68,25 @@ export const RANGES: RangeDef[] = [
   { id: "90d", label: "90D" },
 ];
 
-/** Relation-key display meta. */
-export const ACCOUNT_META: Record<AccountKey, AccountMeta> = {
+/** Relation-key display meta (demo accounts). Real `act_…` accounts use accountMetaFor(). */
+export const ACCOUNT_META: Record<string, AccountMeta> = {
   SKIN: { th: "Skincare Brand", en: "FB + IG", initials: "SK", color: "#3b6fe0" },
   MAIN: { th: "ร้านหลัก TH", en: "FB + IG", initials: "TH", color: "#16181d" },
   FASH: { th: "Fashion Line", en: "IG", initials: "FL", color: "#6E56CF" },
   LAZ: { th: "Lazada Push", en: "FB", initials: "LZ", color: "#1f8a5b" },
 };
+
+/** Display meta for any account id — the demo map, else derived (live act_… accounts). */
+export function accountMetaFor(id: string, name?: string): AccountMeta {
+  const known = ACCOUNT_META[id];
+  if (known) return known;
+  const label = name?.trim() || id;
+  const initials =
+    label.replace(/[^A-Za-z0-9ก-๙]/g, "").slice(0, 2).toUpperCase() || "AD";
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return { th: label, en: "Meta", initials, color: RAMP[hash % RAMP.length] };
+}
 
 /** The 7 judged KPIs, in display order (DESIGN §5 / .ai/kpi-engine.md). */
 export const METRIC_DEFS: MetricDef[] = [

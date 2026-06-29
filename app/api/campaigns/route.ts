@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { INSIGHT_WINDOW_DAYS } from "@/lib/meta/map";
 import type { AccountKey, Campaign } from "@/data/types";
 
 export async function GET() {
+  // Campaigns that delivered in the last 30 days (mirrors Ads Manager) — i.e. have
+  // an insight snapshot. Paused-but-delivered campaigns are included; never-delivered
+  // ones stay in the DB but out of the view.
   const rows = await prisma.campaign.findMany({
+    where: { insights: { some: { window: "last_30d" } } },
     include: { adAccount: true, insights: { where: { window: "last_30d" }, take: 1 } },
-    orderBy: { metaCampaignId: "asc" },
+    orderBy: { syncedAt: "desc" },
   });
   const campaigns: Campaign[] = rows.map((c) => {
     const i = c.insights[0];
@@ -13,6 +18,7 @@ export async function GET() {
       id: c.metaCampaignId,
       name: c.name,
       sku: "", // filled below
+      status: c.status, // real Meta on/off (mirrors Business Suite)
       account: c.adAccount.metaAccountId as AccountKey,
       budget: c.dailyBudgetMinor / 100,
       metrics: {
@@ -22,7 +28,7 @@ export async function GET() {
         cpm: i?.cpm ?? 0,
         cpp: i?.cpp ?? 0,
         cpr: i?.cpr ?? 0,
-        cost: i ? Number(i.spend) : 0,
+        cost: i ? Number(i.spend) / INSIGHT_WINDOW_DAYS : 0, // daily cost (Cost/วัน)
       },
     };
   });

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { patchProduct } from "@/lib/api";
 import { useAppStore } from "@/store/AppProvider";
 import { allCategories } from "@/lib/resolvers";
 import { DEFAULT_CATEGORIES } from "@/data/categories";
@@ -7,28 +9,36 @@ import { Icon } from "@/components/icons/Icon";
 import { AccountChips } from "./AccountChips";
 import type { AccountKey } from "@/data/types";
 
-export function ProductEditModal() {
+export function ProductEditModal({ onSaved }: { onSaved?: () => void }) {
   const m = useAppStore((s) => s.editModal);
   const customCats = useAppStore((s) => s.customCats);
   const setEdit = useAppStore((s) => s.setEdit);
   const toggleEditAccount = useAppStore((s) => s.toggleEditAccount);
-  const saveEdit = useAppStore((s) => s.saveEdit);
   const closeEdit = useAppStore((s) => s.closeEdit);
+  const [saving, setSaving] = useState(false);
 
   if (!m) return null;
   const cats = allCategories(DEFAULT_CATEGORIES, customCats);
-  const canSave = !!(m.th.trim() && m.cost);
+  const canSave = !!(m.th.trim() && m.cost) && !saving;
 
-  const onSave = () => {
+  const onSave = async () => {
     if (!canSave) return;
-    saveEdit(m.sku, {
-      th: m.th.trim(),
-      en: m.en.trim() || m.th.trim(),
-      category: m.cat,
-      unitCost: Math.round(parseFloat(m.cost) || 0),
-      img: m.img,
-      accounts: m.accounts,
-    });
+    setSaving(true);
+    try {
+      await patchProduct(m.sku, {
+        th: m.th.trim(),
+        category: m.cat,
+        unitCost: Math.round(parseFloat(m.cost) || 0),
+        img: m.img,
+        accounts: m.accounts,
+      });
+      onSaved?.();
+      closeEdit();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -48,12 +58,9 @@ export function ProductEditModal() {
         </div>
 
         <div className="flex flex-col gap-[14px] overflow-y-auto px-[22px] py-5">
-          <PhotoField img={m.img} onPick={(d) => setEdit("img", d)} onClear={() => setEdit("img", null)} />
-          <Field label="ชื่อสินค้า (ไทย) *">
+          <PhotoField sku={m.sku} img={m.img} onPick={(d) => setEdit("img", d)} onClear={() => setEdit("img", null)} />
+          <Field label="ชื่อสินค้า *">
             <input value={m.th} onChange={(e) => setEdit("th", e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="ชื่อสินค้า (English)">
-            <input value={m.en} onChange={(e) => setEdit("en", e.target.value)} className={inputCls} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="ต้นทุน/ชิ้น (฿) *">
@@ -83,7 +90,7 @@ export function ProductEditModal() {
             className="flex-1 rounded-[10px] border-none py-3 text-[13.5px] font-semibold text-white"
             style={{ background: canSave ? "#16181d" : "#cdd1d8", cursor: canSave ? "pointer" : "not-allowed" }}
           >
-            บันทึก
+            {saving ? "กำลังบันทึก…" : "บันทึก"}
           </button>
         </div>
       </div>
@@ -104,20 +111,48 @@ export function Field({ label, children }: { label: string; children: React.Reac
 }
 
 export function PhotoField({
+  sku,
   img,
   onPick,
   onClear,
 }: {
+  sku?: string;
   img: string | null;
-  onPick: (dataUrl: string) => void;
+  onPick: (url: string) => void;
   onClear: () => void;
 }) {
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [busy, setBusy] = useState(false);
+
+  const readAsDataUrl = (f: File) =>
+    new Promise<string>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.readAsDataURL(f);
+    });
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    const r = new FileReader();
-    r.onload = () => onPick(String(r.result));
-    r.readAsDataURL(f);
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("kind", "PRODUCT_IMAGE");
+      if (sku) fd.append("sku", sku);
+      const res = await fetch("/api/attachments", { method: "POST", body: fd });
+      if (res.ok) {
+        const { url } = (await res.json()) as { url: string };
+        onPick(url);
+      } else {
+        // Storage not configured yet (503) or upload failed → keep dev working.
+        onPick(await readAsDataUrl(f));
+      }
+    } catch {
+      onPick(await readAsDataUrl(f));
+    } finally {
+      setBusy(false);
+      e.target.value = "";
+    }
   };
   return (
     <div>
@@ -132,8 +167,8 @@ export function PhotoField({
       ) : (
         <label className="flex h-[110px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-[#cdd1d8] bg-field-bg text-muted-2">
           <Icon name="upload" size={24} />
-          <span className="text-[12px]">อัปโหลดรูปสินค้า</span>
-          <input type="file" accept="image/*" onChange={onFile} className="hidden" />
+          <span className="text-[12px]">{busy ? "กำลังอัปโหลด…" : "อัปโหลดรูปสินค้า"}</span>
+          <input type="file" accept="image/*" disabled={busy} onChange={onFile} className="hidden" />
         </label>
       )}
     </div>

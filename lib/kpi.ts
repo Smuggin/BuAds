@@ -56,7 +56,7 @@ export function verdictMeta(verdict: Verdict): VerdictMeta {
 }
 
 export interface CampaignState {
-  closedAuto: boolean;
+  shouldClose: boolean; // KPI says close, but it's still running in Meta (advisory)
   defaultOn: boolean;
   on: boolean;
   statusLabel: string;
@@ -66,25 +66,29 @@ export interface CampaignState {
 
 /**
  * Resolve a campaign's open/closed state and status chip.
- * A breaching campaign whose product has auto-close on defaults OFF ("ปิดอัตโนมัติ");
- * a user override wins over the derived default.
+ *
+ * On/off MIRRORS the real Meta status (`metaActive`, synced from the API — same as
+ * Meta Business Suite); a user override wins over it. The KPI verdict no longer
+ * forces the toggle off (the sync is read-only and never pauses Meta) — instead a
+ * breaching, still-running campaign is flagged "ควรปิด" so the team can act.
  */
 export function resolveCampaignState(
   verdict: Verdict,
   autoClose: boolean,
   override: boolean | undefined,
+  metaActive: boolean,
 ): CampaignState {
-  const closedAuto = verdict === "breach" && autoClose;
-  const defaultOn = !closedAuto;
+  const defaultOn = metaActive;
   const on = override ?? defaultOn;
+  const shouldClose = on && verdict === "breach" && autoClose;
   const vm = verdictMeta(verdict);
   return {
-    closedAuto,
+    shouldClose,
     defaultOn,
     on,
-    statusLabel: closedAuto ? "ปิดอัตโนมัติ" : vm.label,
-    statusColor: closedAuto ? PERF_COLORS.danger : vm.color,
-    statusIcon: closedAuto ? "⏸" : vm.icon,
+    statusLabel: !on ? "ปิดอยู่" : shouldClose ? "ควรปิด" : vm.label,
+    statusColor: !on ? "#6b7280" : shouldClose ? PERF_COLORS.danger : vm.color,
+    statusIcon: !on ? "⏸" : shouldClose ? "⚠" : vm.icon,
   };
 }
 

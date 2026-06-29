@@ -3,7 +3,9 @@
  * Verdict / status / on-off are NEVER stored here; they are derived by lib/kpi.ts.
  */
 
-export type AccountKey = "SKIN" | "MAIN" | "FASH" | "LAZ";
+// Account relation key. Demo data uses SKIN/MAIN/FASH/LAZ; live Meta data uses
+// real `act_…` ids — so this is a widened string (use accountMetaFor() for display).
+export type AccountKey = string;
 
 export type MetricKey = "roas" | "ctr" | "cpa" | "cpm" | "cpp" | "cpr" | "cost";
 export type MetricDir = "min" | "max";
@@ -32,7 +34,6 @@ export interface AccountMeta {
 export interface Product {
   sku: string;
   th: string;
-  en: string;
   category: string;
   accounts: AccountKey[];
   unitCost: number;
@@ -42,10 +43,14 @@ export interface Product {
   custom?: boolean;
 }
 
+/** Real on/off status from Meta (mirrors Business Suite); synced, never derived. */
+export type CampaignStatus = "ACTIVE" | "PAUSED";
+
 export interface Campaign {
   id: string;
   name: string;
   sku: string;
+  status: CampaignStatus;
   account: AccountKey;
   budget: number;
   metrics: Metrics;

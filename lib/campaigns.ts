@@ -10,7 +10,8 @@ import type {
   Product,
   Thresholds,
 } from "@/data/types";
-import { ACCOUNT_META, METRIC_DEFS, RAMP } from "./constants";
+import { ACCOUNT_META, accountMetaFor, METRIC_DEFS, RAMP } from "./constants";
+import { fmtMetric } from "./format";
 import { effAutoClose, effBudget, effThresholds } from "./resolvers";
 import { evalCampaign, resolveCampaignState, type CampaignState, type EvalResult } from "./kpi";
 
@@ -21,8 +22,8 @@ export type CampSortKey = MetricKey | "name" | "status" | "open" | "budget";
 
 export interface ResolvedRow {
   campaign: Campaign;
-  product: Product;
-  thresholds: Thresholds;
+  product: Product | null;
+  thresholds: Thresholds | null;
   evalResult: EvalResult;
   state: CampaignState;
   budget: number;
@@ -31,6 +32,7 @@ export interface ResolvedRow {
   detail: string;
   prodTh: string;
   accTh: string;
+  unmapped: boolean; // no product mapped yet (live Meta campaigns) — shown without judging
 }
 
 export interface CampaignGroup {
@@ -68,11 +70,48 @@ export interface BuildResult {
   summary: { marked: number; running: number; closed: number };
 }
 
-function resolveRow(c: Campaign, p: Product, params: BuildParams): ResolvedRow {
+function resolveRow(c: Campaign, p: Product | null, params: BuildParams): ResolvedRow {
+  if (!p) {
+    // unmapped live campaign — display raw metrics, no judging
+    const cells = METRIC_DEFS.map((m) => ({
+      key: m.key,
+      value: c.metrics[m.key],
+      disp: fmtMetric(m.key, c.metrics[m.key]),
+      ok: true,
+    }));
+    const metaActive = c.status === "ACTIVE";
+    const on = params.campOverride[c.id] ?? metaActive;
+    return {
+      campaign: c,
+      product: null,
+      thresholds: null,
+      evalResult: { cells, breaches: 0, passAll: true, verdict: "running" },
+      state: {
+        shouldClose: false,
+        defaultOn: metaActive,
+        on,
+        statusLabel: on ? "ยังไม่จับคู่" : "ปิดอยู่",
+        statusColor: "#6b7280",
+        statusIcon: on ? "●" : "⏸",
+      },
+      budget: effBudget(c, params.budgetOverride),
+      budgetChanged: false,
+      statusRank: 1,
+      detail: "ยังไม่ได้จับคู่กับสินค้า — เลือกสินค้าเพื่อให้ระบบตัดสิน",
+      prodTh: "—",
+      accTh: accountMetaFor(c.account).th,
+      unmapped: true,
+    };
+  }
   const thresholds = effThresholds(p, params.prodThr);
   const auto = effAutoClose(p, params.autoOverride);
   const evalResult = evalCampaign(c.metrics, thresholds);
-  const state = resolveCampaignState(evalResult.verdict, auto, params.campOverride[c.id]);
+  const state = resolveCampaignState(
+    evalResult.verdict,
+    auto,
+    params.campOverride[c.id],
+    c.status === "ACTIVE",
+  );
   const budget = effBudget(c, params.budgetOverride);
   const ov = params.budgetOverride[c.id];
   const budgetChanged = ov != null && ov !== c.budget;
@@ -82,7 +121,7 @@ function resolveRow(c: Campaign, p: Product, params: BuildParams): ResolvedRow {
     evalResult.verdict === "marked"
       ? "ROAS เกินเกณฑ์ · พร้อม Scale"
       : evalResult.verdict === "breach"
-        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${auto ? " · ปิดให้แล้ว" : " · รอตรวจสอบ"}`
+        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${auto ? " · แนะนำให้ปิด" : " · รอตรวจสอบ"}`
         : "อยู่ในเกณฑ์ที่ตั้งไว้";
   return {
     campaign: c,
@@ -95,7 +134,8 @@ function resolveRow(c: Campaign, p: Product, params: BuildParams): ResolvedRow {
     statusRank,
     detail,
     prodTh: p.th,
-    accTh: ACCOUNT_META[c.account].th,
+    accTh: accountMetaFor(c.account).th,
+    unmapped: false,
   };
 }
 
@@ -113,12 +153,7 @@ function sortRows(rows: ResolvedRow[], key: CampSortKey, dir: SortDir): Resolved
 export function buildCampaignGroups(params: BuildParams): BuildResult {
   const { campaigns, products, groupBy } = params;
   const bySku = new Map(products.map((p) => [p.sku, p]));
-  const rows = campaigns
-    .map((c) => {
-      const p = bySku.get(c.sku);
-      return p ? resolveRow(c, p, params) : null;
-    })
-    .filter((r): r is ResolvedRow => r !== null);
+  const rows = campaigns.map((c) => resolveRow(c, bySku.get(c.sku) ?? null, params));
 
   // summary across all campaigns
   const summary = { marked: 0, running: 0, closed: 0 };
@@ -149,12 +184,14 @@ export function buildCampaignGroups(params: BuildParams): BuildResult {
       makeGroup(
         "product",
         p.sku,
-        rows.filter((r) => r.product.sku === p.sku),
+        rows.filter((r) => r.product?.sku === p.sku),
         p,
         products,
         effAutoClose(p, params.autoOverride),
       ),
     );
+    const unmapped = rows.filter((r) => r.unmapped);
+    if (unmapped.length) groups.push(makeUnmappedGroup(unmapped));
   }
 
   // sort rows within each group, and sort the groups
@@ -184,7 +221,7 @@ function makeGroup(
   const count = rows.length;
 
   if (kind === "account") {
-    const meta = ACCOUNT_META[key as AccountKey];
+    const meta = accountMetaFor(key);
     return {
       kind, key, marked, closed, count, rows,
       title: meta.th,
@@ -201,7 +238,7 @@ function makeGroup(
     return {
       kind, key, marked, closed, count, rows,
       title: product.th,
-      subtitle: `${product.en} · ${product.sku} · ${count} แคมเปญ`,
+      subtitle: `${product.sku} · ${count} แคมเปญ`,
       initials: product.sku.slice(0, 2),
       color: RAMP[pi % RAMP.length],
       hasAuto: true,
@@ -218,6 +255,24 @@ function makeGroup(
     hasAuto: false,
     autoOn: false,
     thresholds: null,
+  };
+}
+
+function makeUnmappedGroup(rows: ResolvedRow[]): CampaignGroup {
+  return {
+    kind: "none",
+    key: "__unmapped__",
+    title: "ยังไม่จับคู่สินค้า · Unmapped",
+    subtitle: `แคมเปญที่ยังไม่ได้ผูกกับสินค้า · ${rows.length} แคมเปญ`,
+    initials: "?",
+    color: "#9aa0a8",
+    marked: 0,
+    closed: rows.filter((r) => !r.state.on).length,
+    count: rows.length,
+    hasAuto: false,
+    autoOn: false,
+    thresholds: null,
+    rows,
   };
 }
 

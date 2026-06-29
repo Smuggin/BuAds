@@ -24,7 +24,7 @@ describe("buildCampaignGroups", () => {
     const { groups } = buildCampaignGroups(base());
     expect(groups).toHaveLength(PRODUCTS.length);
     for (const g of groups) {
-      expect(g.rows.every((r) => r.product.sku === g.key)).toBe(true);
+      expect(g.rows.every((r) => r.product?.sku === g.key)).toBe(true);
     }
   });
 
@@ -45,14 +45,14 @@ describe("buildCampaignGroups", () => {
     expect(roas).toEqual([...roas].sort((a, b) => b - a));
   });
 
-  it("threshold edit re-judges: raising SUN-50 ROAS floor breaches + auto-closes its rows", () => {
+  it("threshold edit re-judges: raising SUN-50 ROAS floor breaches + flags for close (still running in Meta)", () => {
     const { groups } = buildCampaignGroups(base({ prodThr: { "SUN-50": { roas: 9 } } }));
     const sun = groups.find((g) => g.key === "SUN-50")!;
     expect(sun.rows.length).toBeGreaterThan(0);
     for (const r of sun.rows) {
       expect(r.evalResult.verdict).toBe("breach");
-      expect(r.state.closedAuto).toBe(true); // SUN-50 autoClose is on
-      expect(r.state.on).toBe(false);
+      expect(r.state.shouldClose).toBe(true); // SUN-50 autoClose on + still ACTIVE in Meta
+      expect(r.state.on).toBe(true); // mirrors Meta status; read-only sync never pauses
     }
   });
 });

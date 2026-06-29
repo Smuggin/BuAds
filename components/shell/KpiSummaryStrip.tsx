@@ -1,5 +1,8 @@
-import { SUMMARY_CARDS } from "@/data/overview";
-import type { DeltaTone } from "@/data/types";
+"use client";
+
+import { useEffect, useState } from "react";
+import { getOverview } from "@/lib/api";
+import type { DeltaTone, SummaryCard } from "@/data/types";
 
 const TONE: Record<DeltaTone, string> = {
   pos: "text-success",
@@ -9,12 +12,21 @@ const TONE: Record<DeltaTone, string> = {
 
 /**
  * 6-card KPI summary strip — sits under the top bar on every page (DESIGN §3).
- * Static; values come from the overview seed.
+ * Reads live totals from /api/overview (DB-computed).
  */
 export function KpiSummaryStrip() {
+  const [cards, setCards] = useState<SummaryCard[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getOverview().then((d) => alive && setCards(d.summary));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-      {SUMMARY_CARDS.map((c) => (
+      {cards.map((c) => (
         <div
           key={c.en}
           className="min-w-0 rounded-card border border-border bg-card px-[15px] py-[14px] shadow-card"
@@ -26,12 +38,14 @@ export function KpiSummaryStrip() {
           <div className="num whitespace-nowrap text-[21px] font-semibold tracking-[-0.03em]">
             {c.value}
           </div>
-          <div className="mt-[6px] flex items-center gap-[5px]">
-            <span className={`num text-[12px] font-semibold ${TONE[c.tone]}`}>
-              {c.up ? "▲" : "▼"} {c.delta}
-            </span>
-            <span className="text-[10.5px] text-faint">vs prev</span>
-          </div>
+          {c.delta && (
+            <div className="mt-[6px] flex items-center gap-[5px]">
+              <span className={`num text-[12px] font-semibold ${TONE[c.tone]}`}>
+                {c.up ? "▲" : "▼"} {c.delta}
+              </span>
+              <span className="text-[10.5px] text-faint">vs prev</span>
+            </div>
+          )}
         </div>
       ))}
     </section>

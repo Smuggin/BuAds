@@ -5,8 +5,8 @@ const AXIS = ["29 พ.ค.", "5 มิ.ย.", "12 มิ.ย.", "19 มิ.ย."
 
 /** Daily-spend bars: accent fill, last/peak day highlighted, average label. */
 export function DailySpendCard({ daily }: { daily: number[] }) {
-  const max = Math.max(...daily);
-  const avg = Math.round(daily.reduce((s, v) => s + v, 0) / daily.length);
+  const max = daily.length ? Math.max(...daily) : 1;
+  const avg = daily.length ? Math.round(daily.reduce((s, v) => s + v, 0) / daily.length) : 0;
 
   return (
     <Card className="px-5 py-[18px]">

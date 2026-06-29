@@ -50,25 +50,32 @@ describe("evalCampaign — verdicts", () => {
   });
 });
 
-describe("resolveCampaignState — auto-close & overrides", () => {
-  it("breach + product auto-close → defaults OFF (ปิดอัตโนมัติ)", () => {
-    const s = resolveCampaignState("breach", true, undefined);
-    expect(s.closedAuto).toBe(true);
-    expect(s.defaultOn).toBe(false);
-    expect(s.on).toBe(false);
-    expect(s.statusLabel).toBe("ปิดอัตโนมัติ");
+describe("resolveCampaignState — on/off mirrors Meta, KPI is advisory", () => {
+  it("active in Meta → ON even when breaching; flagged ควรปิด", () => {
+    const s = resolveCampaignState("breach", true, undefined, true);
+    expect(s.on).toBe(true);
+    expect(s.shouldClose).toBe(true);
+    expect(s.statusLabel).toBe("ควรปิด");
   });
 
-  it("breach + no auto-close → flagged but left running", () => {
-    const s = resolveCampaignState("breach", false, undefined);
-    expect(s.closedAuto).toBe(false);
+  it("paused in Meta → OFF (ปิดอยู่), regardless of verdict", () => {
+    const s = resolveCampaignState("marked", true, undefined, false);
+    expect(s.defaultOn).toBe(false);
+    expect(s.on).toBe(false);
+    expect(s.shouldClose).toBe(false);
+    expect(s.statusLabel).toBe("ปิดอยู่");
+  });
+
+  it("active + breach + no auto-close → running, flagged เกินเกณฑ์", () => {
+    const s = resolveCampaignState("breach", false, undefined, true);
+    expect(s.shouldClose).toBe(false);
     expect(s.on).toBe(true);
     expect(s.statusLabel).toBe("เกินเกณฑ์");
   });
 
-  it("user override wins over the derived default", () => {
-    expect(resolveCampaignState("breach", true, true).on).toBe(true);
-    expect(resolveCampaignState("marked", false, false).on).toBe(false);
+  it("user override wins over the Meta default", () => {
+    expect(resolveCampaignState("marked", true, false, true).on).toBe(false); // active but toggled off
+    expect(resolveCampaignState("breach", true, true, false).on).toBe(true); // paused but toggled on
   });
 });
 
