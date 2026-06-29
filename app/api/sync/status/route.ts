@@ -14,3 +14,8 @@ export async function POST() {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+/** Vercel cron triggers via GET. Same lightweight status mirror. */
+export async function GET() {
+  return POST();
+}
