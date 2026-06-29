@@ -36,6 +36,18 @@ async function getJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Persist a product threshold / auto-close edit (Phase 9). */
+export async function patchProduct(
+  sku: string,
+  body: { thresholds?: Record<string, number>; autoClose?: boolean },
+): Promise<void> {
+  await fetch(`/api/products/${encodeURIComponent(sku)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export const getOverview = () => getJSON<OverviewData>("/api/overview");
 export const getProducts = () => getJSON<Product[]>("/api/products");
 export const getCampaigns = () => getJSON<Campaign[]>("/api/campaigns");
