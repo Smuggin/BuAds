@@ -74,13 +74,13 @@ export interface CampaignState {
  */
 export function resolveCampaignState(
   verdict: Verdict,
-  autoClose: boolean,
+  advise: boolean, // close policy is active (SUGGEST or AUTO, i.e. not OFF)
   override: boolean | undefined,
   metaActive: boolean,
 ): CampaignState {
   const defaultOn = metaActive;
   const on = override ?? defaultOn;
-  const shouldClose = on && verdict === "breach" && autoClose;
+  const shouldClose = on && verdict === "breach" && advise;
   const vm = verdictMeta(verdict);
   return {
     shouldClose,

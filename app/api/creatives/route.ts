@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import type { Creative, CreativeFormat, ProfileKey } from "@/data/types";
+import { rangeToWindow } from "@/lib/windows";
+import type {
+  AudienceProfile,
+  Creative,
+  CreativeEngagement,
+  CreativeFormat,
+  CreativeVideo,
+  ProfileKey,
+} from "@/data/types";
 
 const FMT: Record<string, CreativeFormat> = {
   VIDEO: "Video",
@@ -9,11 +17,12 @@ const FMT: Record<string, CreativeFormat> = {
   IMAGE: "Image",
 };
 
-export async function GET() {
+export async function GET(req: Request) {
+  const window = rangeToWindow(new URL(req.url).searchParams.get("range"));
   const rows = await prisma.creative.findMany({
     include: {
       product: true,
-      insights: { where: { window: "last_30d" }, take: 1 },
+      insights: { where: { window }, take: 1 },
       campaigns: { include: { campaign: true } },
     },
     orderBy: { metaCreativeId: "asc" },
@@ -34,8 +43,19 @@ export async function GET() {
       cpa: i?.cpa ?? 0,
       purchases: i?.purchases ?? 0,
       frequency: i?.frequency ?? 0,
+      thumbnailUrl: cr.thumbnailUrl ?? undefined,
+      previewImageUrl: cr.previewImageUrl ?? undefined,
+      permalinkUrl: cr.permalinkUrl ?? undefined,
+      videoId: cr.videoId ?? undefined,
+      caption: cr.caption ?? undefined,
+      adStatus: cr.adStatus ?? undefined,
+      video: (i?.video as CreativeVideo | null) ?? undefined,
+      engagement: (i?.engagement as CreativeEngagement | null) ?? undefined,
+      audience: (i?.audience as AudienceProfile | null) ?? undefined,
     };
   });
-  creatives.sort((a, b) => Number(a.id.slice(2)) - Number(b.id.slice(2)));
+  // Delivering creatives first (real spend), then by name. (Never coerce the
+  // long-numeric metaCreativeId to a JS Number — that loses precision.)
+  creatives.sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name, "th"));
   return NextResponse.json(creatives);
 }

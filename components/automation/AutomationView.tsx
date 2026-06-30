@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRules } from "@/lib/api";
-import { effRuleOn } from "@/lib/resolvers";
-import { useAppStore } from "@/store/AppProvider";
+import { getRules, patchRule } from "@/lib/api";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
@@ -11,8 +9,6 @@ import type { Rule } from "@/data/types";
 
 export function AutomationView() {
   const [rules, setRules] = useState<Rule[] | null>(null);
-  const ruleOverride = useAppStore((s) => s.ruleOverride);
-  const toggleRule = useAppStore((s) => s.toggleRule);
 
   useEffect(() => {
     let alive = true;
@@ -21,6 +17,17 @@ export function AutomationView() {
       alive = false;
     };
   }, []);
+
+  // Persist on/off to the DB (the cron honors Rule.on). Optimistic, reverts on error.
+  const handleToggle = async (rule: Rule) => {
+    const next = !rule.on;
+    setRules((rs) => rs?.map((x) => (x.id === rule.id ? { ...x, on: next } : x)) ?? rs);
+    try {
+      await patchRule(rule.id, next);
+    } catch {
+      setRules((rs) => rs?.map((x) => (x.id === rule.id ? { ...x, on: !next } : x)) ?? rs);
+    }
+  };
 
   if (!rules) {
     return (
@@ -32,7 +39,7 @@ export function AutomationView() {
     );
   }
 
-  const activeCount = rules.filter((r) => effRuleOn(r, ruleOverride)).length;
+  const activeCount = rules.filter((r) => r.on).length;
   const totalRuns = rules.reduce((s, r) => s + r.runs, 0);
 
   return (
@@ -52,8 +59,17 @@ export function AutomationView() {
         </button>
       </section>
 
+      {rules.length === 0 && (
+        <Card className="flex h-[220px] flex-col items-center justify-center gap-1 p-6 text-center">
+          <div className="text-[13px] font-semibold text-ink">ยังไม่มีกฎอัตโนมัติ · No automation rules yet</div>
+          <div className="max-w-[420px] text-[12px] text-muted-2">
+            ตั้งค่าปิดแคมเปญอัตโนมัติได้ที่หน้าเกณฑ์ KPI สินค้า · Auto-close is configured per product on the Product KPI page
+          </div>
+        </Card>
+      )}
+
       {rules.map((r) => {
-        const on = effRuleOn(r, ruleOverride);
+        const on = r.on;
         return (
           <Card key={r.id}>
             <div
@@ -88,7 +104,7 @@ export function AutomationView() {
                 <span className="num text-[11px] text-muted-2">
                   {r.runs}× · {r.lastRun}
                 </span>
-                <Toggle on={on} size="lg" onClick={() => toggleRule(r.id, r.on)} label={r.name} />
+                <Toggle on={on} size="lg" onClick={() => handleToggle(r)} label={r.name} />
               </div>
             </div>
           </Card>

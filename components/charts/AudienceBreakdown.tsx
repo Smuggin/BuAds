@@ -13,21 +13,27 @@ import {
 import type { AudienceProfile } from "@/data/types";
 
 export function AudienceBreakdown({ profile }: { profile: AudienceProfile }) {
-  const ageMax = Math.max(...profile.age);
-  const provMax = Math.max(...profile.province);
+  // Real synced profiles bring their own region labels (top regions vary); the
+  // mock profile omits them and we fall back to the fixed province list.
+  const provinceLabels = profile.provinceLabels ?? PROVINCE_LABELS;
+  // Guard the bar denominators: a real profile may have a missing/zero dimension.
+  const ageMax = Math.max(1, ...profile.age);
+  const provMax = Math.max(1, ...profile.province);
+  const hours = profile.hour.length || 12;
 
   // heatmap intensity = day[d] * hour[h]
   const heat: number[][] = [];
   let heatMax = 0;
   for (let d = 0; d < 7; d++) {
     const row: number[] = [];
-    for (let h = 0; h < 12; h++) {
-      const v = profile.day[d] * profile.hour[h];
+    for (let h = 0; h < hours; h++) {
+      const v = (profile.day[d] ?? 0) * (profile.hour[h] ?? 0);
       row.push(v);
       if (v > heatMax) heatMax = v;
     }
     heat.push(row);
   }
+  const heatDiv = heatMax || 1;
 
   return (
     <div className="flex flex-col gap-[22px]">
@@ -82,7 +88,7 @@ export function AudienceBreakdown({ profile }: { profile: AudienceProfile }) {
             {profile.province.map((v, i) => (
               <div key={i} className="flex items-center gap-[10px]">
                 <span className="w-[118px] flex-shrink-0 text-[11.5px] text-ink-2">
-                  {PROVINCE_LABELS[i]}
+                  {provinceLabels[i]}
                 </span>
                 <div className="flex flex-1 items-center gap-2">
                   <div
@@ -110,7 +116,7 @@ export function AudienceBreakdown({ profile }: { profile: AudienceProfile }) {
                     <div
                       key={j}
                       className="h-5 flex-1 rounded-[3px]"
-                      style={{ background: `rgb(var(--accent-rgb) / ${(0.05 + (v / heatMax) * 0.92).toFixed(3)})` }}
+                      style={{ background: `rgb(var(--accent-rgb) / ${(0.05 + (v / heatDiv) * 0.92).toFixed(3)})` }}
                     />
                   ))}
                 </div>

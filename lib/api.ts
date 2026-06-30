@@ -7,6 +7,7 @@ import type {
   AvailableAccount,
   Campaign,
   Category,
+  CloseMode,
   ConnectionAccount,
   Creative,
   LogEntry,
@@ -17,6 +18,9 @@ import type {
   SummaryCard,
 } from "@/data/types";
 import type { AgeRow, GenderRow, ProvinceRow } from "@/data/overview";
+import type { BreakdownData } from "@/lib/breakdown";
+
+export type { BreakdownData };
 
 export interface OverviewData {
   summary: SummaryCard[];
@@ -41,6 +45,10 @@ export interface SyncResult {
   campaigns: number;
   insights: number;
   autoClosed: number;
+  creatives: number;
+  creativeLinks: number;
+  creativeInsights: number;
+  breakdowns: number;
   startedAt: string;
   errors: string[];
 }
@@ -70,7 +78,7 @@ export async function patchProduct(
   sku: string,
   body: {
     thresholds?: Record<string, number>;
-    autoClose?: boolean;
+    closeMode?: CloseMode;
     th?: string;
     category?: string;
     unitCost?: number;
@@ -97,7 +105,7 @@ export async function createProduct(body: {
   accounts?: string[];
   unitCost: number;
   img?: string | null;
-  autoClose?: boolean;
+  closeMode?: CloseMode;
   thresholds?: Partial<Record<string, number>>;
 }): Promise<string> {
   const res = await fetch("/api/products", {
@@ -141,11 +149,29 @@ export interface AccountOption {
 /** Connected ad accounts (synced from Meta) for the catalog account pickers. */
 export const getAccounts = () => getJSON<AccountOption[]>("/api/accounts");
 
-export const getOverview = () => getJSON<OverviewData>("/api/overview");
+/** Account-scoped overview (account = metaAccountId | "all", range = 7d|30d|90d). */
+export const getOverview = (account = "all", range = "30d") =>
+  getJSON<OverviewData>(`/api/overview?account=${encodeURIComponent(account)}&range=${range}`);
+/** Account-wide audience breakdown for the Breakdown page (range + account filter). */
+export const getBreakdown = (range: string, account: string) =>
+  getJSON<BreakdownData>(`/api/breakdown?range=${range}&account=${encodeURIComponent(account)}`);
+/** metaAccountIds with audience data for a range (others are disabled in the top-bar
+ *  filter on the Breakdown page). */
+export const getBreakdownAccounts = (range: string) =>
+  getJSON<string[]>(`/api/breakdown/accounts?range=${range}`);
 export const getProducts = () => getJSON<Product[]>("/api/products");
-export const getCampaigns = () => getJSON<Campaign[]>("/api/campaigns");
-export const getCreatives = () => getJSON<Creative[]>("/api/creatives");
+export const getCampaigns = (range = "30d") => getJSON<Campaign[]>(`/api/campaigns?range=${range}`);
+export const getCreatives = (range = "30d") => getJSON<Creative[]>(`/api/creatives?range=${range}`);
 export const getRules = () => getJSON<Rule[]>("/api/rules");
+/** Persist a rule's on/off (the cron honors Rule.on). */
+export async function patchRule(id: string, on: boolean): Promise<void> {
+  const res = await fetch(`/api/rules/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on }),
+  });
+  if (!res.ok) throw new Error(`rule toggle failed (${res.status})`);
+}
 export const getLogs = () => getJSON<LogEntry[]>("/api/logs");
 export const getNotifications = () => getJSON<Notification[]>("/api/notifications");
 export const getCategories = () => getJSON<Category[]>("/api/categories");

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import type { AccountKey, MetricKey } from "@/data/types";
+import { regroupUnmapped } from "@/lib/meta/regroup";
+import type { AccountKey, CloseMode, MetricKey } from "@/data/types";
 
 const THR_COLUMN: Record<MetricKey, string> = {
   roas: "thrRoas",
@@ -15,7 +16,7 @@ const THR_COLUMN: Record<MetricKey, string> = {
 
 type PatchBody = {
   thresholds?: Partial<Record<MetricKey, number>>;
-  autoClose?: boolean;
+  closeMode?: CloseMode;
   th?: string;
   category?: string;
   unitCost?: number;
@@ -45,9 +46,10 @@ export async function PATCH(
       details.push(`${k.toUpperCase()} → ${v}`);
     }
   }
-  if (typeof body.autoClose === "boolean") {
-    data.autoClose = body.autoClose;
-    details.push(`ปิดอัตโนมัติ → ${body.autoClose ? "เปิด" : "ปิด"}`);
+  if (body.closeMode && ["OFF", "SUGGEST", "AUTO"].includes(body.closeMode)) {
+    data.closeMode = body.closeMode;
+    const L: Record<CloseMode, string> = { OFF: "ปิด", SUGGEST: "แนะนำ", AUTO: "อัตโนมัติ" };
+    details.push(`โหมดปิด → ${L[body.closeMode]}`);
   }
   if (typeof body.th === "string" && body.th.trim()) {
     data.thName = body.th.trim();
@@ -98,6 +100,11 @@ export async function PATCH(
     body.unitCost !== undefined ||
     body.img !== undefined ||
     accountsChanged;
+
+  // a renamed SKU may now match different campaigns — regroup the unmapped ones
+  if (typeof body.th === "string" && body.th.trim()) {
+    await regroupUnmapped().catch(() => {});
+  }
 
   const user = await prisma.user.findFirst();
   await prisma.activityLog.create({

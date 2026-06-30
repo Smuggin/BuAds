@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCampaignGroups, type BuildParams } from "./campaigns";
+import { buildCampaignGroups, shouldCloseGroup, type BuildParams } from "./campaigns";
 import { firstSortDir } from "./constants";
 import { CAMPAIGNS } from "@/data/campaigns";
 import { PRODUCTS } from "@/data/products";
@@ -13,7 +13,7 @@ const base = (over: Partial<BuildParams> = {}): BuildParams => ({
   campSort: "status",
   campDir: "desc",
   prodThr: {},
-  autoOverride: {},
+  closeOverride: {},
   budgetOverride: {},
   campOverride: {},
   ...over,
@@ -51,9 +51,23 @@ describe("buildCampaignGroups", () => {
     expect(sun.rows.length).toBeGreaterThan(0);
     for (const r of sun.rows) {
       expect(r.evalResult.verdict).toBe("breach");
-      expect(r.state.shouldClose).toBe(true); // SUN-50 autoClose on + still ACTIVE in Meta
+      expect(r.state.shouldClose).toBe(true); // SUN-50 SUGGEST + still ACTIVE in Meta
       expect(r.state.on).toBe(true); // mirrors Meta status; read-only sync never pauses
     }
+  });
+
+  it("shouldCloseGroup lists breaching active campaigns, and is empty when product mode is OFF", () => {
+    const breach = { prodThr: { "SUN-50": { roas: 9 } } };
+    const withSuggest = buildCampaignGroups(base(breach));
+    const grp = shouldCloseGroup(withSuggest.groups);
+    expect(grp).not.toBeNull();
+    expect(grp!.rows.every((r) => r.state.shouldClose)).toBe(true);
+    expect(grp!.rows.some((r) => r.campaign.sku === "SUN-50")).toBe(true);
+
+    // setting SUN-50 to OFF removes its campaigns from the should-close advisory
+    const off = buildCampaignGroups(base({ ...breach, closeOverride: { "SUN-50": "OFF" } }));
+    const grpOff = shouldCloseGroup(off.groups);
+    expect((grpOff?.rows ?? []).some((r) => r.campaign.sku === "SUN-50")).toBe(false);
   });
 });
 

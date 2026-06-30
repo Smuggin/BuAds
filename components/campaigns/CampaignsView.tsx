@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { assignCampaignProduct, getCampaigns, getCreatives, getLogs, getProducts, runStatusSync } from "@/lib/api";
 import { accountMetaFor, firstSortDir } from "@/lib/constants";
-import { buildCampaignGroups, type CampSortKey } from "@/lib/campaigns";
-import { effAutoClose, effBudget, effThresholds } from "@/lib/resolvers";
+import { buildCampaignGroups, shouldCloseGroup, type CampSortKey } from "@/lib/campaigns";
+import { effBudget, effCloseMode, effThresholds } from "@/lib/resolvers";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { useAppStore } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
@@ -40,7 +40,7 @@ export function CampaignsView() {
   const campSort = useAppStore((s) => s.campSort);
   const campDir = useAppStore((s) => s.campDir);
   const prodThr = useAppStore((s) => s.prodThr);
-  const autoOverride = useAppStore((s) => s.autoOverride);
+  const closeOverride = useAppStore((s) => s.closeOverride);
   const budgetOverride = useAppStore((s) => s.budgetOverride);
   const campOverride = useAppStore((s) => s.campOverride);
   const campDetail = useAppStore((s) => s.campDetail);
@@ -48,6 +48,8 @@ export function CampaignsView() {
   const assignModal = useAppStore((s) => s.assignModal);
   const historyModal = useAppStore((s) => s.historyModal);
   const creativeOpen = useAppStore((s) => s.creativeOpen);
+  const accountFilter = useAppStore((s) => s.accountFilter);
+  const range = useAppStore((s) => s.range);
 
   const setGroupBy = useAppStore((s) => s.setGroupBy);
   const setGroupSort = useAppStore((s) => s.setGroupSort);
@@ -69,7 +71,7 @@ export function CampaignsView() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getProducts(), getCampaigns(), getCreatives(), getLogs()]).then(
+    Promise.all([getProducts(), getCampaigns(range), getCreatives(range), getLogs()]).then(
       ([p, c, cr, l]) => {
         if (!alive) return;
         setProducts(p);
@@ -81,13 +83,13 @@ export function CampaignsView() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [range]);
 
   // Near-realtime on/off: refetch the (background-poller-refreshed) cache every 120s,
   // and pull a fresh status the moment the tab regains focus, so the toggles track
   // Meta Business Suite without a manual sync.
   useEffect(() => {
-    const refetch = () => getCampaigns().then(setCampaigns).catch(() => {});
+    const refetch = () => getCampaigns(range).then(setCampaigns).catch(() => {});
     const interval = setInterval(refetch, 120_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void runStatusSync().then(refetch);
@@ -97,7 +99,7 @@ export function CampaignsView() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [range]);
 
   if (!products || !campaigns || !creatives || !logs) {
     return (
@@ -112,7 +114,7 @@ export function CampaignsView() {
   const productBySku = (sku: string) => products.find((p) => p.sku === sku)!;
   const campaignById = (id: string) => campaigns.find((c) => c.id === id)!;
   const isMapped = (c: Campaign) => products.some((p) => p.sku === c.sku);
-  const loadCampaigns = () => getCampaigns().then(setCampaigns);
+  const loadCampaigns = () => getCampaigns(range).then(setCampaigns);
   // Clicking a campaign with no product attached can't open the (product-keyed)
   // detail — prompt to assign a product first.
   const handleOpenDetail = (id: string) => {
@@ -124,11 +126,15 @@ export function CampaignsView() {
     const p = productBySku(c.sku);
     const thr = effThresholds(p, prodThr);
     const ev = evalCampaign(c.metrics, thr);
-    return resolveCampaignState(ev.verdict, effAutoClose(p, autoOverride), campOverride[c.id], c.status === "ACTIVE");
+    return resolveCampaignState(ev.verdict, effCloseMode(p, closeOverride) !== "OFF", campOverride[c.id], c.status === "ACTIVE");
   };
 
+  // global top-bar account scope
+  const scopedCampaigns =
+    accountFilter === "all" ? campaigns : campaigns.filter((c) => c.account === accountFilter);
+
   const { groups, summary } = buildCampaignGroups({
-    campaigns,
+    campaigns: scopedCampaigns,
     products,
     groupBy,
     groupSort,
@@ -136,10 +142,11 @@ export function CampaignsView() {
     campSort,
     campDir,
     prodThr,
-    autoOverride,
+    closeOverride,
     budgetOverride,
     campOverride,
   });
+  const shouldClose = shouldCloseGroup(groups);
 
   const onSort = (key: CampSortKey) => setCampSort(key, firstSortDir(key));
 
@@ -297,7 +304,8 @@ export function CampaignsView() {
         <span className="text-[11px] text-faint">คลิกหัวคอลัมน์เพื่อเรียงแคมเปญในกลุ่ม</span>
       </Card>
 
-      {groups.map((g) => (
+      {/* pinned: active campaigns breaching their KPIs (Suggest/Auto products) */}
+      {[shouldClose, ...groups].filter((g): g is NonNullable<typeof g> => !!g).map((g) => (
         <CampaignGroupTable
           key={g.key}
           group={g}

@@ -90,6 +90,7 @@ model AdAccount {
   lastSyncAt    DateTime?
   products      ProductAccount[]
   campaigns     Campaign[]
+  breakdowns    BreakdownSnapshot[]
 }
 
 model Category {
@@ -97,6 +98,14 @@ model Category {
   name      String    @unique
   isBuiltIn Boolean   @default(false)
   products  Product[]
+}
+
+// Per-product close policy when a campaign breaches its KPIs:
+// OFF = ignore · SUGGEST = flag in the "should close" group · AUTO = auto-pause (env-gated).
+enum CloseMode {
+  OFF
+  SUGGEST
+  AUTO
 }
 
 model Product {
@@ -108,7 +117,7 @@ model Product {
   imageId    String?
   image      Attachment?      @relation(fields: [imageId], references: [id])
   custom     Boolean          @default(false)
-  autoClose  Boolean          @default(true)
+  closeMode  CloseMode        @default(SUGGEST) // OFF | SUGGEST (advisory) | AUTO (auto-pause)
   categoryId String
   category   Category         @relation(fields: [categoryId], references: [id])
   thrRoas    Float
@@ -185,17 +194,23 @@ enum CreativeFormat {
 }
 
 model Creative {
-  id             String             @id @default(cuid())
-  metaCreativeId String             @unique
-  name           String
-  format         CreativeFormat
-  thumbnailUrl   String?
-  profileKey     String? // mock audience profile key (A/B/C); real path uses InsightSnapshot.audience
-  productId      String?
-  product        Product?           @relation(fields: [productId], references: [id])
-  syncedAt       DateTime
-  campaigns      CampaignCreative[]
-  insights       InsightSnapshot[]
+  id              String             @id @default(cuid())
+  metaCreativeId  String             @unique
+  name            String
+  format          CreativeFormat
+  thumbnailUrl    String?
+  metaPostId      String? // effective_object_story_id ("{page}_{post}")
+  videoId         String? // creative.video_id — embeds the FB video player (watch?v=)
+  permalinkUrl    String? // resolved post permalink (or instagram_permalink_url)
+  previewImageUrl String? // full_picture / creative.image_url (larger than thumbnail)
+  caption         String? // post message/caption text
+  adStatus        AdStatus? // ACTIVE if any ad using it is active, else PAUSED
+  profileKey      String? // mock audience profile key (A/B/C); real path uses InsightSnapshot.audience
+  productId       String?
+  product         Product?           @relation(fields: [productId], references: [id])
+  syncedAt        DateTime
+  campaigns       CampaignCreative[]
+  insights        InsightSnapshot[]
 }
 
 model CampaignCreative {
@@ -237,10 +252,26 @@ model InsightSnapshot {
   cpp         Float
   cpr         Float
   audience    Json?
+  video       Json? // { plays3s, thruplays, p25,p50,p75,p100, avgWatchSec, hookRate, holdRate }
+  engagement  Json? // { reactions, comments, shares, saves, postEngagement }
   fetchedAt   DateTime
 
   @@index([level, window, campaignId])
   @@index([level, window, creativeId])
+}
+
+// Account-level audience breakdown (age/gender/region/hour/day) per window, for
+// the Breakdown page. `data` holds raw sums (BreakdownAccum) so the API can sum
+// across accounts then recompute pct/ROAS. One row per (account, window).
+model BreakdownSnapshot {
+  id          String    @id @default(cuid())
+  window      String
+  adAccountId String
+  adAccount   AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  data        Json
+  fetchedAt   DateTime
+
+  @@unique([adAccountId, window])
 }
 
 // ---------------- Automation · Activity · Notifications ----------------

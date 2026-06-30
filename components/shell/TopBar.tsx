@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { RANGES, TITLES } from "@/lib/constants";
+import { getAccounts, getBreakdownAccounts, type AccountOption } from "@/lib/api";
 import { useAppStore } from "@/store/AppProvider";
 import { NotificationsBell } from "./NotificationsBell";
 
@@ -16,6 +18,32 @@ export function TopBar() {
   const [title, sub] = titleFor(pathname);
   const range = useAppStore((s) => s.range);
   const setRange = useAppStore((s) => s.setRange);
+  const accountFilter = useAppStore((s) => s.accountFilter);
+  const setAccountFilter = useAppStore((s) => s.setAccountFilter);
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  // On the Breakdown page, accounts with no report for the current range are
+  // disabled (like the page's old in-view picker). null = no restriction.
+  const onBreakdown = pathname.startsWith("/breakdown");
+  const [available, setAvailable] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getAccounts().then((a) => alive && setAccounts(a)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!onBreakdown) return;
+    let alive = true;
+    getBreakdownAccounts(range).then((ids) => alive && setAvailable(ids)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [onBreakdown, range]);
+
+  const hasReport = (id: string) => !onBreakdown || available === null || available.includes(id);
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-[#e4e7ec] bg-page-bg/[0.86] px-[26px] py-[14px] backdrop-blur-md">
@@ -27,15 +55,25 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-[10px]">
-        {/* account selector (display-only for now) */}
-        <button
-          type="button"
-          className="flex items-center gap-[9px] rounded-control border border-[#dde1e7] bg-card px-[13px] py-2 text-[12.5px] font-medium text-ink"
-        >
+        <div className="flex items-center gap-[7px] rounded-control border border-[#dde1e7] bg-card pl-[11px] pr-1 text-[12.5px] font-medium text-ink">
           <span className="h-[7px] w-[7px] rounded-full bg-success" />
-          ทุกบัญชี · All accounts (6)
-          <span className="text-[10px] text-muted-2">▾</span>
-        </button>
+          <select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            className="cursor-pointer border-none bg-transparent py-2 pr-1 text-[12.5px] font-medium text-ink focus:outline-none"
+          >
+            <option value="all">ทุกบัญชี · All accounts ({accounts.length})</option>
+            {accounts.map((a) => {
+              const ok = hasReport(a.id);
+              return (
+                <option key={a.id} value={a.id} disabled={!ok}>
+                  {a.name}
+                  {ok ? "" : " · ไม่มีรายงาน"}
+                </option>
+              );
+            })}
+          </select>
+        </div>
 
         {/* date range */}
         <div className="flex rounded-control border border-[#dde1e7] bg-card p-[3px]" role="group" aria-label="ช่วงเวลา">

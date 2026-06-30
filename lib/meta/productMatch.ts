@@ -23,13 +23,17 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
  * whole name when there are no pipes or no Thai segment.
  */
 export function extractProductSegment(campaignName: string): string {
-  const parts = campaignName
+  // Meta tags duplicated campaigns with "สำเนา" (copy). Drop it first so a
+  // "… | 300 - สำเนา" budget/copy segment doesn't win as the longest Thai
+  // segment over the real product name.
+  const cleaned = campaignName.replace(/สำเนา/g, " ");
+  const parts = cleaned
     .split("|")
     .map((s) => s.trim())
     .filter(Boolean);
   const thai = parts.filter((p) => THAI.test(p));
   if (thai.length) return thai.sort((a, b) => b.length - a.length)[0];
-  return campaignName.trim();
+  return cleaned.trim();
 }
 
 /**

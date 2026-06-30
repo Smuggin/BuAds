@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getOverview, type OverviewData } from "@/lib/api";
+import { useAppStore } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 import { DailySpendCard } from "./DailySpendCard";
 import { SpendShareCard } from "./SpendShareCard";
@@ -9,14 +10,16 @@ import { AccountsTable } from "./AccountsTable";
 
 export function OverviewView() {
   const [data, setData] = useState<OverviewData | null>(null);
+  const accountFilter = useAppStore((s) => s.accountFilter);
+  const range = useAppStore((s) => s.range);
 
   useEffect(() => {
     let alive = true;
-    getOverview().then((d) => alive && setData(d));
+    getOverview(accountFilter, range).then((d) => alive && setData(d));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [accountFilter, range]);
 
   if (!data) return <OverviewSkeleton />;
 

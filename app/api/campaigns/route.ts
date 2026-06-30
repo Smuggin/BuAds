@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { INSIGHT_WINDOW_DAYS } from "@/lib/meta/map";
+import { rangeToWindow, windowDays } from "@/lib/windows";
 import type { AccountKey, Campaign } from "@/data/types";
 
-export async function GET() {
-  // Campaigns that delivered in the last 30 days (mirrors Ads Manager) — i.e. have
+export async function GET(req: Request) {
+  const window = rangeToWindow(new URL(req.url).searchParams.get("range"));
+  const days = windowDays(window);
+  // Campaigns that delivered in the selected window (mirrors Ads Manager) — i.e. have
   // an insight snapshot. Paused-but-delivered campaigns are included; never-delivered
   // ones stay in the DB but out of the view.
   const rows = await prisma.campaign.findMany({
-    where: { insights: { some: { window: "last_30d" } } },
-    include: { adAccount: true, insights: { where: { window: "last_30d" }, take: 1 } },
+    where: { insights: { some: { window } } },
+    include: { adAccount: true, insights: { where: { window }, take: 1 } },
     orderBy: { syncedAt: "desc" },
   });
   const campaigns: Campaign[] = rows.map((c) => {
@@ -28,7 +30,7 @@ export async function GET() {
         cpm: i?.cpm ?? 0,
         cpp: i?.cpp ?? 0,
         cpr: i?.cpr ?? 0,
-        cost: i ? Number(i.spend) / INSIGHT_WINDOW_DAYS : 0, // daily cost (Cost/วัน)
+        cost: i ? Number(i.spend) / days : 0, // daily cost (Cost/วัน), window-aware
       },
     };
   });

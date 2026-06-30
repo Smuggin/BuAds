@@ -4,20 +4,25 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getProducts, patchProduct } from "@/lib/api";
 import { METRIC_DEFS, RAMP } from "@/lib/constants";
-import { effAutoClose, effThresholds } from "@/lib/resolvers";
+import { effCloseMode, effThresholds } from "@/lib/resolvers";
 import { dirSymbol } from "@/lib/format";
 import { useAppStore } from "@/store/AppProvider";
 import { Banner } from "@/components/ui/Banner";
 import { Card } from "@/components/ui/Card";
-import { Toggle } from "@/components/ui/Toggle";
-import type { MetricKey, Product } from "@/data/types";
+import type { CloseMode, MetricKey, Product } from "@/data/types";
+
+const CLOSE_OPTS: [CloseMode, string][] = [
+  ["OFF", "ปิด · Off"],
+  ["SUGGEST", "แนะนำ · Suggest"],
+  ["AUTO", "อัตโนมัติ · Auto"],
+];
 
 export function ProductKpiView() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const prodThr = useAppStore((s) => s.prodThr);
-  const autoOverride = useAppStore((s) => s.autoOverride);
+  const closeOverride = useAppStore((s) => s.closeOverride);
   const setThreshold = useAppStore((s) => s.setThreshold);
-  const toggleAutoClose = useAppStore((s) => s.toggleAutoClose);
+  const setCloseMode = useAppStore((s) => s.setCloseMode);
 
   useEffect(() => {
     let alive = true;
@@ -50,7 +55,7 @@ export function ProductKpiView() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] border-collapse text-[13px]">
+          <table className="w-full min-w-[1060px] border-collapse text-[13px]">
             <thead>
               <tr className="bg-field-bg text-[10.5px] uppercase tracking-[0.02em] text-muted">
                 <th className="px-5 py-[10px] text-left font-semibold">สินค้า · Product</th>
@@ -60,13 +65,13 @@ export function ProductKpiView() {
                     <span className="num text-faint">{dirSymbol(m.dir)}</span>
                   </th>
                 ))}
-                <th className="px-4 py-[10px] text-center font-semibold">ปิดอัตโนมัติ</th>
+                <th className="px-4 py-[10px] text-center font-semibold">เมื่อเกินเกณฑ์ · On breach</th>
               </tr>
             </thead>
             <tbody>
               {products?.map((p, pi) => {
                 const thr = effThresholds(p, prodThr);
-                const auto = effAutoClose(p, autoOverride);
+                const mode = effCloseMode(p, closeOverride);
                 return (
                   <tr key={p.sku} className="border-t border-border-2">
                     <td className="px-5 py-3">
@@ -98,14 +103,22 @@ export function ProductKpiView() {
                     ))}
                     <td className="px-4 py-3">
                       <div className="flex justify-center">
-                        <Toggle
-                          on={auto}
-                          onClick={() => {
-                            toggleAutoClose(p.sku, p.autoClose); // optimistic
-                            patchProduct(p.sku, { autoClose: !auto }).catch(() => {}); // persist
+                        <select
+                          value={mode}
+                          aria-label={`โหมดปิด ${p.th}`}
+                          onChange={(e) => {
+                            const v = e.target.value as CloseMode;
+                            setCloseMode(p.sku, v); // optimistic (live re-judge)
+                            patchProduct(p.sku, { closeMode: v }).catch(() => {}); // persist
                           }}
-                          label={`ปิดอัตโนมัติ ${p.th}`}
-                        />
+                          className="rounded-[7px] border border-[#dde1e7] bg-card px-[8px] py-[6px] text-[12px] font-medium text-ink"
+                        >
+                          {CLOSE_OPTS.map(([v, label]) => (
+                            <option key={v} value={v}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </td>
                   </tr>
@@ -140,7 +153,7 @@ function ThresholdInput({
           const v = parseFloat(e.target.value);
           onChange(Number.isNaN(v) ? 0 : v);
         }}
-        className="num w-[54px] rounded-[7px] border border-[#dde1e7] bg-card px-[6px] py-[5px] text-right text-[12px] text-ink"
+        className="num w-[64px] rounded-[7px] border border-[#dde1e7] bg-card px-[7px] py-[5px] text-right text-[12px] text-ink"
       />
       {suffix && <span className="text-[11px] text-faint">{suffix}</span>}
     </span>
