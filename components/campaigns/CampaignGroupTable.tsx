@@ -57,7 +57,8 @@ export function CampaignGroupTable({
         </div>
         <div className="flex flex-wrap items-center gap-[10px]">
           <span className="num text-[11.5px] text-muted">
-            ★ {group.marked} · ⏸ {group.closed}
+            <span className="font-semibold text-success">● {group.active}</span> ทำงาน
+            <span className="text-muted-2"> / {group.count}</span> · ★ {group.marked} · ⏸ {group.closed}
           </span>
           {group.hasAuto && group.closeMode && (
             <span

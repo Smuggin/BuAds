@@ -7,6 +7,7 @@
 import { graphGetAll } from "./client";
 import { ageIndex, genderIndex, hourBucket12, weekdayIndexMon } from "./map";
 import { emptyBreakdownAccum, type BreakdownAccum, type Seg } from "@/lib/breakdown";
+import { timeParams, type TimeSpec } from "@/lib/windows";
 
 const n = (s?: string): number => (s ? parseFloat(s) : 0);
 const roasOf = (pr?: { action_type: string; value: string }[]): number =>
@@ -19,15 +20,15 @@ const add = (seg: Seg, impr: number, spend: number, rev: number): void => {
 
 const FIELDS = "spend,impressions,purchase_roas";
 
-/** @param window a Meta date_preset, e.g. "last_7d" | "last_30d" | "last_90d". */
+/** @param spec preset window or a custom {since,until} range. */
 export async function fetchBreakdown(
   actId: string,
   token: string,
-  window: string,
+  spec: TimeSpec,
 ): Promise<BreakdownAccum> {
   const acc = emptyBreakdownAccum();
   const path = `/${actId}/insights`;
-  const base = { level: "account", date_preset: window, fields: FIELDS } as const;
+  const base = { level: "account", fields: FIELDS, ...timeParams(spec) } as const;
 
   // age + gender (one call; each row is one age×gender cell → folds into both marginals)
   try {
@@ -83,13 +84,23 @@ export async function fetchBreakdown(
     /* hourly breakdown unavailable */
   }
 
-  // day of week — daily increment, weekday derived from date_start
+  // day of week + daily spend series — one daily-increment call carries both
+  // (base.fields already includes spend). day[] gets weekday impressions for the
+  // heatmap; daily{} keeps per-date spend for the Daily-spend chart.
   try {
-    type R = { date_start?: string; impressions?: string };
+    type R = {
+      date_start?: string;
+      impressions?: string;
+      spend?: string;
+      purchase_roas?: { action_type: string; value: string }[];
+    };
     for (const r of await graphGetAll<R>(path, { ...base, time_increment: 1 }, token)) {
       if (!r.date_start) continue;
       const d = weekdayIndexMon(r.date_start);
       if (d >= 0) acc.day[d] += n(r.impressions);
+      const spend = n(r.spend);
+      acc.daily![r.date_start] = (acc.daily![r.date_start] ?? 0) + spend;
+      acc.dailyRev![r.date_start] = (acc.dailyRev![r.date_start] ?? 0) + spend * roasOf(r.purchase_roas);
     }
   } catch {
     /* daily series unavailable */

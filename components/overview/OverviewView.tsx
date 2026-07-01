@@ -12,6 +12,7 @@ export function OverviewView() {
   const [data, setData] = useState<OverviewData | null>(null);
   const accountFilter = useAppStore((s) => s.accountFilter);
   const range = useAppStore((s) => s.range);
+  const customRange = useAppStore((s) => s.customRange);
 
   useEffect(() => {
     let alive = true;
@@ -19,14 +20,14 @@ export function OverviewView() {
     return () => {
       alive = false;
     };
-  }, [accountFilter, range]);
+  }, [accountFilter, range, customRange]);
 
   if (!data) return <OverviewSkeleton />;
 
   return (
     <div className="flex flex-col gap-[18px]">
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.9fr_1fr]">
-        <DailySpendCard daily={data.daily} />
+        <DailySpendCard series={data.dailyByAccount} dates={data.dailyDates} />
         <SpendShareCard accounts={data.accounts} />
       </section>
       <AccountsTable accounts={data.accounts} />

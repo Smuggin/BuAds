@@ -241,10 +241,13 @@ export function BreakdownView() {
                   {row.map((v, j) => (
                     <div
                       key={j}
-                      title={heatCellTitle(i, j)}
-                      className="h-[22px] flex-1 rounded-[3px]"
+                      className="group relative h-[22px] flex-1 rounded-[3px] transition-shadow hover:ring-2 hover:ring-inset hover:ring-ink/30"
                       style={{ background: `rgb(var(--accent-rgb) / ${(0.05 + (v / 100) * 0.92).toFixed(3)})` }}
-                    />
+                    >
+                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-ink px-[7px] py-1 text-[10.5px] text-white shadow-dropdown group-hover:block">
+                        {heatCellTitle(i, j)} <span className="num text-white/70">· {v}%</span>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>

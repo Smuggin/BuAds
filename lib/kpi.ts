@@ -133,7 +133,11 @@ export function rankCreatives(
         creative.cpa <= thresholds.cpa;
       const strong = pass && creative.roas >= thresholds.roas * MARKED_ROAS_MULTIPLIER;
       const verdict: CreativeVerdict = strong ? "marked" : pass ? "ok" : "poor";
-      const defaultOn = verdict !== "poor";
+      // Reflect the creative's REAL Meta on/off when known (synced ad status);
+      // fall back to the KPI recommendation only when status is unavailable
+      // (mock data / never-delivered creatives).
+      const defaultOn =
+        creative.adStatus != null ? creative.adStatus === "ACTIVE" : verdict !== "poor";
       const on = openOverrides[creative.id] ?? defaultOn;
       return { creative, rank: i + 1, verdict, defaultOn, on };
     });

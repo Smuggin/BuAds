@@ -44,6 +44,7 @@ export interface CampaignGroup {
   initials: string;
   color: string;
   marked: number;
+  active: number; // campaigns currently ON (running)
   closed: number;
   count: number;
   hasAuto: boolean;
@@ -220,13 +221,14 @@ function makeGroup(
   closeMode: CloseMode | null = null,
 ): CampaignGroup {
   const marked = rows.filter((r) => r.statusRank === 2).length;
+  const active = rows.filter((r) => r.state.on).length;
   const closed = rows.filter((r) => !r.state.on).length;
   const count = rows.length;
 
   if (kind === "account") {
     const meta = accountMetaFor(key);
     return {
-      kind, key, marked, closed, count, rows,
+      kind, key, marked, active, closed, count, rows,
       title: meta.th,
       subtitle: `${meta.en} · ${count} แคมเปญ`,
       initials: meta.initials,
@@ -239,7 +241,7 @@ function makeGroup(
   if (kind === "product" && product) {
     const pi = products.findIndex((p) => p.sku === product.sku);
     return {
-      kind, key, marked, closed, count, rows,
+      kind, key, marked, active, closed, count, rows,
       title: product.th,
       subtitle: `${product.sku} · ${count} แคมเปญ`,
       initials: product.sku.slice(0, 2),
@@ -250,7 +252,7 @@ function makeGroup(
     };
   }
   return {
-    kind: "none", key, marked, closed, count, rows,
+    kind: "none", key, marked, active, closed, count, rows,
     title: "ทุกแคมเปญ",
     subtitle: `ทุกบัญชี ทุกสินค้า · ${count} แคมเปญ`,
     initials: "∑",
@@ -270,6 +272,7 @@ function makeUnmappedGroup(rows: ResolvedRow[]): CampaignGroup {
     initials: "?",
     color: "#9aa0a8",
     marked: 0,
+    active: rows.filter((r) => r.state.on).length,
     closed: rows.filter((r) => !r.state.on).length,
     count: rows.length,
     hasAuto: false,
@@ -292,6 +295,7 @@ export function shouldCloseGroup(groups: CampaignGroup[]): CampaignGroup | null 
     initials: "⚠",
     color: "#d6453d",
     marked: 0,
+    active: rows.length, // all "should close" rows are still running
     closed: 0,
     count: rows.length,
     hasAuto: false,

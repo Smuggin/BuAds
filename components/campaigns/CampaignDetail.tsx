@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { FORMAT_META, METRIC_DEFS } from "@/lib/constants";
 import { dirSymbol, fmtMetric, fmtMoney } from "@/lib/format";
 import { usePerfColor } from "@/store/AppProvider";
@@ -9,6 +10,7 @@ import { CREATIVE_PROFILES } from "@/data/profiles";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
 import { AudienceBreakdown } from "@/components/charts/AudienceBreakdown";
+import { CreativePlayer } from "@/components/creatives/CreativePlayer";
 import type { Campaign, Creative, MetricKey, Product, Thresholds } from "@/data/types";
 
 const VERDICT_META: Record<CreativeVerdict, { label: string; color: string }> = {
@@ -43,6 +45,7 @@ export function CampaignDetail({
   onBudget,
 }: Props) {
   const pc = usePerfColor();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const acc = accountMetaFor(campaign.account);
   const ev = evalCampaign(campaign.metrics, thresholds, skip);
   const campCreatives = creatives.filter((c) => c.campaigns.includes(campaign.id));
@@ -138,50 +141,113 @@ export function CampaignDetail({
         {ranked.map((r, i) => {
           const fm = FORMAT_META[r.creative.format];
           const vm = VERDICT_META[r.verdict];
+          const expanded = expandedId === r.creative.id;
           return (
-            <div
-              key={r.creative.id}
-              className="flex items-center gap-[13px] border-t border-border-3 px-4 py-[13px] transition-opacity duration-opacity"
-              style={{ background: r.on ? "#fff" : "#fbfbfc", opacity: r.on ? 1 : 0.62 }}
-            >
-              <span
-                className="num w-[26px] flex-shrink-0 text-[12px] font-bold"
-                style={{ color: i === 0 ? "#1f8a5b" : "#aeb3bb" }}
-              >
-                #{r.rank}
-              </span>
+            <div key={r.creative.id} className="border-t border-border-3">
               <div
-                className="flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-control text-[16px] text-white"
-                style={{ background: fm.color }}
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={() => setExpandedId(expanded ? null : r.creative.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpandedId(expanded ? null : r.creative.id);
+                  }
+                }}
+                className="flex cursor-pointer items-center gap-[13px] px-4 py-[13px] transition-opacity duration-opacity hover:bg-field-bg"
+                style={{ background: r.on ? undefined : "#fbfbfc", opacity: r.on ? 1 : 0.62 }}
               >
-                {fm.icon}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-[9px]">
-                  <span className="text-[13.5px] font-semibold text-ink">{r.creative.name}</span>
-                  <span
-                    className="whitespace-nowrap rounded-pill px-[9px] py-[3px] text-[10.5px] font-semibold"
-                    style={{ background: vm.color + "18", color: vm.color }}
-                  >
-                    {vm.label}
-                  </span>
+                <span
+                  className="num w-[26px] flex-shrink-0 text-[12px] font-bold"
+                  style={{ color: i === 0 ? "#1f8a5b" : "#aeb3bb" }}
+                >
+                  #{r.rank}
+                </span>
+                <div
+                  className="flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-control text-[16px] text-white"
+                  style={{ background: fm.color }}
+                >
+                  {fm.icon}
                 </div>
-                <div className="num mt-[5px] flex flex-wrap items-center gap-[14px] text-[11.5px] text-muted">
-                  <span style={{ color: pc(r.creative.roas) }}>
-                    ROAS {Math.round(r.creative.roas * 10) / 10}
-                  </span>
-                  <span>CTR {Math.round(r.creative.ctr * 10) / 10}%</span>
-                  <span>CPA {fmtMoney(r.creative.cpa)}</span>
-                  <span>Spend {fmtMoney(r.creative.spend)}</span>
-                  <span>Purch {r.creative.purchases}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-[9px]">
+                    <span className="text-[13.5px] font-semibold text-ink">{r.creative.name}</span>
+                    <span
+                      className="whitespace-nowrap rounded-pill px-[9px] py-[3px] text-[10.5px] font-semibold"
+                      style={{ background: vm.color + "18", color: vm.color }}
+                    >
+                      {vm.label}
+                    </span>
+                  </div>
+                  <div className="num mt-[5px] flex flex-wrap items-center gap-[14px] text-[11.5px] text-muted">
+                    <span style={{ color: pc(r.creative.roas) }}>
+                      ROAS {Math.round(r.creative.roas * 10) / 10}
+                    </span>
+                    <span>CTR {Math.round(r.creative.ctr * 10) / 10}%</span>
+                    <span>CPA {fmtMoney(r.creative.cpa)}</span>
+                    <span>Spend {fmtMoney(r.creative.spend)}</span>
+                    <span>Purch {r.creative.purchases}</span>
+                  </div>
                 </div>
+                <span
+                  className="flex-shrink-0 text-[11px] text-muted-2 transition-transform"
+                  style={{ transform: expanded ? "rotate(180deg)" : undefined }}
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+                {/* the on/off toggle must not trigger the row's expand */}
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Toggle
+                    on={r.on}
+                    size="lg"
+                    onClick={() => onToggleCreative(r.creative.id, r.defaultOn)}
+                    label={`เปิด/ปิด ${r.creative.name}`}
+                  />
+                </span>
               </div>
-              <Toggle
-                on={r.on}
-                size="lg"
-                onClick={() => onToggleCreative(r.creative.id, r.defaultOn)}
-                label={`เปิด/ปิด ${r.creative.name}`}
-              />
+
+              {expanded && (
+                <div className="border-t border-border-3 bg-[#fafbfc] px-4 py-[18px]">
+                  <div className="flex flex-wrap items-start gap-4">
+                    <CreativePlayer
+                      preview={r.creative.previewImageUrl ?? r.creative.thumbnailUrl}
+                      name={r.creative.name}
+                      format={r.creative.format}
+                      videoId={r.creative.videoId}
+                      permalinkUrl={r.creative.permalinkUrl}
+                      fallback={{ icon: fm.icon, color: fm.color }}
+                    />
+                    <div className="min-w-[200px] flex-1">
+                      {r.creative.caption && (
+                        <p className="line-clamp-3 text-[12.5px] leading-[1.5] text-ink-2">
+                          {r.creative.caption}
+                        </p>
+                      )}
+                      {r.creative.permalinkUrl && (
+                        <a
+                          href={r.creative.permalinkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2 inline-block text-[12px] font-medium text-accent hover:underline"
+                        >
+                          เปิดโพสต์ต้นฉบับ · Open original →
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-[18px]">
+                    <div className="mb-[14px] text-[12px] font-semibold text-slate">
+                      ผู้ชมของครีเอทีฟนี้ · This creative’s audience
+                    </div>
+                    <AudienceBreakdown
+                      profile={r.creative.audience ?? CREATIVE_PROFILES[r.creative.profileKey]}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

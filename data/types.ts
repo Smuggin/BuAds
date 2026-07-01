@@ -103,6 +103,7 @@ export interface Creative {
   video?: CreativeVideo;
   engagement?: CreativeEngagement;
   audience?: AudienceProfile; // real age/gender/region/time breakdown from Meta (mock fallback otherwise)
+  groupSize?: number; // # of duplicate ad-creatives (same post) merged into this entry
 }
 
 // A `type` (not `interface`) so it stays assignable to Prisma's JSON input column.
@@ -173,12 +174,22 @@ export type Category = string;
 export type DeltaTone = "pos" | "neg" | "neutral";
 
 export interface SummaryCard {
+  key?: string; // stable id for selection/persistence (overview superset)
   en: string;
   th: string;
   value: string;
   delta: string;
   tone: DeltaTone;
   up: boolean;
+}
+
+/** One ad account's daily spend + revenue series, aligned to OverviewData.dailyDates. */
+export interface OverviewDailyAccount {
+  name: string;
+  initials: string;
+  color: string;
+  spend: number[];
+  revenue: number[];
 }
 
 export interface OverviewAccountRow {

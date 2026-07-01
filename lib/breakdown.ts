@@ -25,6 +25,16 @@ export interface BreakdownAccum {
   region: Record<string, Seg>;
   hour: number[]; // 12 — two-hour buckets (impressions)
   day: number[]; // 7 — Mon..Sun (impressions)
+  daily?: Record<string, number>; // ISO date (YYYY-MM-DD) → spend, over the window
+  dailyRev?: Record<string, number>; // ISO date → revenue (spend × ROAS), over the window
+}
+
+/** Per-account daily series, aligned to a shared date axis (see foldDailyByAccount). */
+export interface DailyAccountSeries {
+  metaAccountId: string;
+  name: string;
+  spend: number[];
+  revenue: number[];
 }
 
 export interface BreakdownData {
@@ -51,7 +61,46 @@ export const emptyBreakdownAccum = (): BreakdownAccum => ({
   region: {},
   hour: zeros(12),
   day: zeros(7),
+  daily: {},
+  dailyRev: {},
 });
+
+/** Merge the per-account daily-spend maps into one date-ordered series.
+ *  Returns aligned arrays: dates (YYYY-MM-DD, ascending) + summed spend per date. */
+export function foldDailySpend(accums: BreakdownAccum[]): { dates: string[]; spend: number[] } {
+  const byDate: Record<string, number> = {};
+  for (const a of accums) {
+    for (const [date, spend] of Object.entries(a.daily ?? {})) {
+      byDate[date] = (byDate[date] ?? 0) + (Number(spend) || 0);
+    }
+  }
+  const dates = Object.keys(byDate).sort();
+  return { dates, spend: dates.map((d) => Math.round(byDate[d])) };
+}
+
+/** Keep every account's daily spend + revenue as its own series on a shared,
+ *  ascending date axis (union of all accounts' dates, zero-filled). Powers the
+ *  stacked per-account daily-spend chart + its Spend/Revenue toggle. */
+export function foldDailyByAccount(
+  rows: { metaAccountId: string; name: string; accum: BreakdownAccum }[],
+): { dates: string[]; accounts: DailyAccountSeries[] } {
+  const dateSet = new Set<string>();
+  for (const r of rows) {
+    for (const d of Object.keys(r.accum.daily ?? {})) dateSet.add(d);
+    for (const d of Object.keys(r.accum.dailyRev ?? {})) dateSet.add(d);
+  }
+  const dates = [...dateSet].sort();
+  const accounts = rows
+    .map((r) => ({
+      metaAccountId: r.metaAccountId,
+      name: r.name,
+      spend: dates.map((d) => Math.round(r.accum.daily?.[d] ?? 0)),
+      revenue: dates.map((d) => Math.round(r.accum.dailyRev?.[d] ?? 0)),
+    }))
+    // drop accounts with no spend AND no revenue across the whole window
+    .filter((a) => a.spend.some((v) => v > 0) || a.revenue.some((v) => v > 0));
+  return { dates, accounts };
+}
 
 /** Sum many per-account accumulators and derive the display rows. ROAS per segment
  *  is Σrevenue / Σspend (blended); pct is the impression share of the dimension. */

@@ -59,10 +59,11 @@ export const TITLES: Record<string, [string, string]> = {
 };
 
 export interface RangeDef {
-  id: "7d" | "30d" | "90d";
+  id: "today" | "7d" | "30d" | "90d";
   label: string;
 }
 export const RANGES: RangeDef[] = [
+  { id: "today", label: "Today" },
   { id: "7d", label: "7D" },
   { id: "30d", label: "30D" },
   { id: "90d", label: "90D" },

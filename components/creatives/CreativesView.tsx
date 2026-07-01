@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getCampaigns, getCreatives, getProducts } from "@/lib/api";
 import { FORMAT_META } from "@/lib/constants";
-import { filterCreatives, skusInAccount } from "@/lib/creatives";
+import { filterCreatives, skusInCreatives } from "@/lib/creatives";
 import { fmtMoney, round1 } from "@/lib/format";
 import { useAppStore, usePerfColor } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
@@ -28,16 +28,18 @@ export function CreativesView() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getProducts(), getCampaigns(range), getCreatives(range)]).then(([p, c, cr]) => {
-      if (!alive) return;
-      setProducts(p);
-      setCampaigns(c);
-      setCreatives(cr);
-    });
+    Promise.all([getProducts(), getCampaigns(range), getCreatives(range, accountFilter)]).then(
+      ([p, c, cr]) => {
+        if (!alive) return;
+        setProducts(p);
+        setCampaigns(c);
+        setCreatives(cr);
+      },
+    );
     return () => {
       alive = false;
     };
-  }, [range]);
+  }, [range, accountFilter]);
 
   if (!products || !campaigns || !creatives) {
     return (
@@ -48,14 +50,15 @@ export function CreativesView() {
     );
   }
 
-  // account scope comes from the global top-bar filter; product stays page-local.
-  const scopedSkus = skusInAccount(creatives, campaigns, accountFilter);
+  // Account scope + post-dedup are applied server-side (getCreatives); the product
+  // filter stays page-local.
+  const scopedSkus = skusInCreatives(creatives);
   const effProd = mediaProd !== "all" && !scopedSkus.has(mediaProd) ? "all" : mediaProd;
-  const list = filterCreatives(creatives, campaigns, accountFilter, effProd);
+  const list = filterCreatives(creatives, effProd);
   const selected = list.find((c) => c.id === selectedCreative) ?? list[0];
 
   const onProd = (v: string) => {
-    const next = filterCreatives(creatives, campaigns, accountFilter, v);
+    const next = filterCreatives(creatives, v);
     const sel = next.some((c) => c.id === selectedCreative)
       ? selectedCreative
       : (next[0]?.id ?? selectedCreative);
@@ -111,7 +114,17 @@ export function CreativesView() {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-semibold text-ink">{cr.name}</div>
+                    <div className="flex items-center gap-[6px]">
+                      <span className="truncate text-[13px] font-semibold text-ink">{cr.name}</span>
+                      {cr.groupSize && cr.groupSize > 1 && (
+                        <span
+                          className="num flex-shrink-0 rounded-[4px] bg-field-bg px-[5px] py-[1px] text-[10px] font-semibold text-muted"
+                          title={`รวมจาก ${cr.groupSize} โฆษณา · merged from ${cr.groupSize} ads`}
+                        >
+                          ×{cr.groupSize}
+                        </span>
+                      )}
+                    </div>
                     <div className="num mt-1 flex items-center gap-[10px] text-[11.5px] text-muted">
                       <span style={{ color: pc(cr.roas) }}>{round1(cr.roas)}x</span>
                       <span>{round1(cr.ctr)}%</span>

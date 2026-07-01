@@ -20,6 +20,9 @@ export async function GET() {
   });
   const products: Product[] = rows
     .sort((a, b) => {
+      // manual drag order wins; the curated ORDER list is the tiebreak while
+      // sortOrder is still all-zero (before anyone has reordered).
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
       const ia = ORDER.indexOf(a.sku);
       const ib = ORDER.indexOf(b.sku);
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
