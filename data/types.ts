@@ -31,6 +31,9 @@ export interface AccountMeta {
   color: string;
 }
 
+/** Per-product policy when a campaign breaches KPIs: ignore / flag / auto-pause. */
+export type CloseMode = "OFF" | "SUGGEST" | "AUTO";
+
 export interface Product {
   sku: string;
   th: string;
@@ -39,7 +42,7 @@ export interface Product {
   unitCost: number;
   img: string | null;
   thresholds: Thresholds;
-  autoClose: boolean;
+  closeMode: CloseMode;
   custom?: boolean;
 }
 
@@ -56,6 +59,25 @@ export interface Campaign {
   metrics: Metrics;
 }
 
+export interface CreativeVideo {
+  plays3s: number;
+  thruplays: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p100: number;
+  avgWatchSec: number;
+  hookRate: number; // %
+  holdRate: number; // %
+}
+
+export interface CreativeEngagement {
+  reactions: number;
+  comments: number;
+  shares: number;
+  saves: number;
+}
+
 export interface Creative {
   id: string;
   name: string;
@@ -70,15 +92,29 @@ export interface Creative {
   cpa: number;
   purchases: number;
   frequency: number;
+  // From the synced post / ad (optional — absent on mock + zero-delivery creatives).
+  thumbnailUrl?: string;
+  previewImageUrl?: string;
+  permalinkUrl?: string;
+  videoId?: string; // Meta video id → embeds the Facebook video player
+  caption?: string;
+  adStatus?: "ACTIVE" | "PAUSED";
+  video?: CreativeVideo;
+  engagement?: CreativeEngagement;
+  audience?: AudienceProfile; // real age/gender/region/time breakdown from Meta (mock fallback otherwise)
 }
 
-export interface AudienceProfile {
-  age: number[]; // 6
-  gender: number[]; // 3
-  province: number[]; // 8
-  day: number[]; // 7
-  hour: number[]; // 12
-}
+// A `type` (not `interface`) so it stays assignable to Prisma's JSON input column.
+export type AudienceProfile = {
+  age: number[]; // 6 — AGE_LABELS
+  gender: number[]; // 3 — GENDER_LABELS
+  province: number[]; // up to 8 (top regions)
+  day: number[]; // 7 — Mon..Sun
+  hour: number[]; // 12 — two-hour buckets
+  // Real synced audience carries its own region labels (top regions vary); mock
+  // omits this and the chart falls back to the fixed PROVINCE_LABELS.
+  provinceLabels?: string[];
+};
 
 export type RuleType = "pause" | "trendUp" | "trendDown" | "clock" | "bell";
 

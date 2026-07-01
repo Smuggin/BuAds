@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { rangeToWindow } from "@/lib/windows";
 import type { OverviewAccountRow, SummaryCard } from "@/data/types";
 
 const baht = (n: number) => "฿" + Math.round(n).toLocaleString("en-US");
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function GET() {
+export async function GET(req: Request) {
+  const params = new URL(req.url).searchParams;
+  const account = params.get("account") ?? "all";
+  const window = rangeToWindow(params.get("range"));
   const accounts = await prisma.adAccount.findMany({
-    include: { campaigns: { include: { insights: { where: { window: "last_30d" } } } } },
+    where: account !== "all" ? { metaAccountId: account } : undefined,
+    include: { campaigns: { include: { insights: { where: { window } } } } },
     orderBy: { name: "asc" },
   });
 

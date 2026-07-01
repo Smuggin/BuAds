@@ -30,6 +30,23 @@ async function main() {
     });
   }
 
+  // built-in automation rule: nightly ฿300 budget reset (also seeded via migration)
+  await prisma.rule.upsert({
+    where: { id: "rule_budget_reset" },
+    update: {},
+    create: {
+      id: "rule_budget_reset",
+      name: "รีเซ็ตงบทุกแคมเปญ · Reset all budgets",
+      scope: "ทุกแคมเปญ · All campaigns",
+      ifCondition: "เที่ยงคืน เวลาไทย · midnight (Bangkok)",
+      thenAction: "ตั้งงบ/วัน ฿300 · Set daily budget ฿300",
+      type: "clock",
+      tone: "#3b6fe0",
+      runs: 0,
+      on: true,
+    },
+  });
+
   console.log("Seeded (non-destructive):", {
     users: await prisma.user.count(),
     categories: await prisma.category.count(),

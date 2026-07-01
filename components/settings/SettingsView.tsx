@@ -106,7 +106,8 @@ export function SettingsView() {
       const r = await runMetaSync();
       await reload();
       const closed = r.autoClosed ? ` · ปิดอัตโนมัติ ${r.autoClosed}` : "";
-      const msg = `ซิงค์สำเร็จ · ${r.accounts} บัญชี · ${r.campaigns} แคมเปญ · ${r.insights} insights${closed}`;
+      const creatives = r.creatives ? ` · ${r.creatives} ครีเอทีฟ` : "";
+      const msg = `ซิงค์สำเร็จ · ${r.accounts} บัญชี · ${r.campaigns} แคมเปญ · ${r.insights} insights${creatives}${closed}`;
       alert(r.errors.length ? `${msg}\nมีข้อผิดพลาดบางบัญชี: ${r.errors.join("; ")}` : msg);
     } catch (e) {
       alert(e instanceof Error ? e.message : "ซิงค์ไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Meta");

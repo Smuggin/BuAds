@@ -2,32 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { getCampaigns, getCreatives, getProducts } from "@/lib/api";
-import { ACCOUNT_META, FORMAT_META } from "@/lib/constants";
+import { FORMAT_META } from "@/lib/constants";
 import { filterCreatives, skusInAccount } from "@/lib/creatives";
 import { fmtMoney, round1 } from "@/lib/format";
 import { useAppStore, usePerfColor } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 import { CreativeDetail } from "./CreativeDetail";
-import type { AccountKey, Campaign, Creative, Product } from "@/data/types";
+import type { Campaign, Creative, Product } from "@/data/types";
 
 export function CreativesView() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [creatives, setCreatives] = useState<Creative[] | null>(null);
 
-  const mediaAcc = useAppStore((s) => s.mediaAcc);
+  const accountFilter = useAppStore((s) => s.accountFilter); // global top-bar scope
+  const range = useAppStore((s) => s.range);
   const mediaProd = useAppStore((s) => s.mediaProd);
   const selectedCreative = useAppStore((s) => s.selectedCreative);
   const prodThr = useAppStore((s) => s.prodThr);
-  const autoOverride = useAppStore((s) => s.autoOverride);
+  const closeOverride = useAppStore((s) => s.closeOverride);
   const selectCreative = useAppStore((s) => s.selectCreative);
-  const setMediaAcc = useAppStore((s) => s.setMediaAcc);
   const setMediaProd = useAppStore((s) => s.setMediaProd);
   const pc = usePerfColor();
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getProducts(), getCampaigns(), getCreatives()]).then(([p, c, cr]) => {
+    Promise.all([getProducts(), getCampaigns(range), getCreatives(range)]).then(([p, c, cr]) => {
       if (!alive) return;
       setProducts(p);
       setCampaigns(c);
@@ -36,7 +36,7 @@ export function CreativesView() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [range]);
 
   if (!products || !campaigns || !creatives) {
     return (
@@ -47,34 +47,20 @@ export function CreativesView() {
     );
   }
 
-  const list = filterCreatives(creatives, campaigns, mediaAcc, mediaProd);
-  const selected =
-    creatives.find((c) => c.id === selectedCreative) ?? list[0] ?? creatives[0];
+  // account scope comes from the global top-bar filter; product stays page-local.
+  const scopedSkus = skusInAccount(creatives, campaigns, accountFilter);
+  const effProd = mediaProd !== "all" && !scopedSkus.has(mediaProd) ? "all" : mediaProd;
+  const list = filterCreatives(creatives, campaigns, accountFilter, effProd);
+  const selected = list.find((c) => c.id === selectedCreative) ?? list[0];
 
-  const onAcc = (v: AccountKey | "all") => {
-    const valid = skusInAccount(creatives, campaigns, v);
-    const prod = mediaProd !== "all" && !valid.has(mediaProd) ? "all" : mediaProd;
-    const next = filterCreatives(creatives, campaigns, v, prod);
-    const sel = next.some((c) => c.id === selectedCreative)
-      ? selectedCreative
-      : (next[0]?.id ?? selectedCreative);
-    setMediaAcc(v, { prod, sel });
-  };
   const onProd = (v: string) => {
-    const next = filterCreatives(creatives, campaigns, mediaAcc, v);
+    const next = filterCreatives(creatives, campaigns, accountFilter, v);
     const sel = next.some((c) => c.id === selectedCreative)
       ? selectedCreative
       : (next[0]?.id ?? selectedCreative);
     setMediaProd(v, sel);
   };
 
-  const accOpts: [AccountKey | "all", string][] = [
-    ["all", "ทุกบัญชี · All accounts"],
-    ...(Object.keys(ACCOUNT_META) as AccountKey[]).map(
-      (k) => [k, ACCOUNT_META[k].th] as [AccountKey, string],
-    ),
-  ];
-  const scopedSkus = skusInAccount(creatives, campaigns, mediaAcc);
   const prodOpts: [string, string][] = [
     ["all", "ทุกสินค้า · All products"],
     ...products.filter((p) => scopedSkus.has(p.sku)).map((p) => [p.sku, p.th] as [string, string]),
@@ -85,8 +71,7 @@ export function CreativesView() {
       {/* left: filters + list */}
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-border-2 p-3">
-          <Select value={mediaAcc} onChange={(v) => onAcc(v as AccountKey | "all")} prefix="บัญชี: " opts={accOpts} />
-          <Select value={mediaProd} onChange={onProd} prefix="สินค้า: " opts={prodOpts} />
+          <Select value={effProd} onChange={onProd} prefix="สินค้า: " opts={prodOpts} />
           <div className="num px-1 text-[11px] text-faint">
             {list.length}/{creatives.length} ครีเอทีฟ
           </div>
@@ -99,7 +84,8 @@ export function CreativesView() {
           ) : (
             list.map((cr) => {
               const fm = FORMAT_META[cr.format];
-              const on = cr.id === selected.id;
+              const on = cr.id === selected?.id;
+              const thumb = cr.previewImageUrl ?? cr.thumbnailUrl;
               return (
                 <button
                   key={cr.id}
@@ -107,12 +93,22 @@ export function CreativesView() {
                   onClick={() => selectCreative(cr.id)}
                   className={`flex w-full items-center gap-3 border-t border-border-3 px-3 py-3 text-left transition-colors duration-bg ${on ? "bg-[#f5f8ff]" : "hover:bg-field-bg"}`}
                 >
-                  <div
-                    className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-control text-[17px] text-white"
-                    style={{ background: fm.color }}
-                  >
-                    {fm.icon}
-                  </div>
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={thumb}
+                      alt={cr.name}
+                      loading="lazy"
+                      className="h-[46px] w-[46px] flex-shrink-0 rounded-control object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-control text-[17px] text-white"
+                      style={{ background: fm.color }}
+                    >
+                      {fm.icon}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-semibold text-ink">{cr.name}</div>
                     <div className="num mt-1 flex items-center gap-[10px] text-[11.5px] text-muted">
@@ -128,14 +124,20 @@ export function CreativesView() {
         </div>
       </Card>
 
-      {/* right: detail */}
-      <CreativeDetail
-        creative={selected}
-        products={products}
-        campaigns={campaigns}
-        prodThr={prodThr}
-        autoOverride={autoOverride}
-      />
+      {/* right: detail (empty until creatives are synced) */}
+      {selected ? (
+        <CreativeDetail
+          creative={selected}
+          products={products}
+          campaigns={campaigns}
+          prodThr={prodThr}
+          closeOverride={closeOverride}
+        />
+      ) : (
+        <Card className="flex h-[400px] items-center justify-center p-5 text-center text-[12.5px] text-muted-2">
+          ยังไม่มีครีเอทีฟ — กดซิงค์ในหน้าตั้งค่า · No creatives yet — run a sync in Settings
+        </Card>
+      )}
     </div>
   );
 }

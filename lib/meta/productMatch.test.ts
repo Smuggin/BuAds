@@ -5,6 +5,7 @@ const PRODUCTS: ProductLite[] = [
   { id: "p1", sku: "GLV-01", thName: "ถุงมือขนสัตว์" },
   { id: "p2", sku: "GLV-02", thName: "ถุงมือขนสัตว์กันหนาว" },
   { id: "p3", sku: "SRM-01", thName: "เซรั่มไบรท์เทนนิ่ง" },
+  { id: "p4", sku: "DOL-01", thName: "ตุ๊กตาแมว" },
 ];
 
 describe("extractProductSegment", () => {
@@ -22,6 +23,12 @@ describe("extractProductSegment", () => {
 
   it("falls back to the whole name without pipes/Thai", () => {
     expect(extractProductSegment("Serum – Retarget 7d")).toBe("Serum – Retarget 7d");
+  });
+
+  it("ignores Meta's สำเนา (copy) marker so the product name wins", () => {
+    expect(
+      extractProductSegment("08/06 | K12 | 1-3 | ตุ๊กตาแมว | No inter | 300 - สำเนา"),
+    ).toBe("ตุ๊กตาแมว");
   });
 });
 
@@ -46,5 +53,14 @@ describe("matchCampaignToProduct", () => {
 
   it("returns null when nothing matches", () => {
     expect(matchCampaignToProduct("09/06 | K14 | 1-3 | กระเป๋า | No inter | 300", PRODUCTS)).toBeNull();
+  });
+
+  it("still groups a duplicated (สำเนา) campaign to its SKU", () => {
+    expect(
+      matchCampaignToProduct("08/06 | K12 | 1-3 | ตุ๊กตาแมว | No inter | 300 - สำเนา", PRODUCTS),
+    ).toBe("p4");
+    expect(
+      matchCampaignToProduct("08/06 | K12 | 4-6 | ตุ๊กตาแมว | No inter | 300 - สำเนา - สำเนา", PRODUCTS),
+    ).toBe("p4");
   });
 });

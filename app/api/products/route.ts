@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { DEFAULT_THRESHOLDS } from "@/lib/constants";
-import type { AccountKey, Product, Thresholds } from "@/data/types";
+import { regroupUnmapped } from "@/lib/meta/regroup";
+import type { AccountKey, CloseMode, Product, Thresholds } from "@/data/types";
 
 // preserve the original demo order (drives ramp colors + product groups)
 const ORDER = ["SRM-01", "SUN-50", "NGT-09", "TEE-22", "BAG-07", "GFT-03"];
@@ -27,7 +28,7 @@ export async function GET() {
       accounts: p.accounts.map((a) => a.adAccount.metaAccountId as AccountKey),
       unitCost: p.unitCost,
       img: p.image?.url ?? p.imgUrl,
-      autoClose: p.autoClose,
+      closeMode: p.closeMode,
       custom: p.custom,
       thresholds: {
         roas: p.thrRoas,
@@ -49,7 +50,7 @@ type CreateBody = {
   accounts?: AccountKey[];
   unitCost: number;
   img?: string | null;
-  autoClose?: boolean;
+  closeMode?: CloseMode;
   thresholds?: Partial<Thresholds>;
 };
 
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
       unitCost: Math.round(body.unitCost) || 0,
       imgUrl: body.img ?? null,
       custom: true,
-      autoClose: body.autoClose ?? true,
+      closeMode: body.closeMode ?? "SUGGEST",
       categoryId: category.id,
       thrRoas: thr.roas,
       thrCtr: thr.ctr,
@@ -98,5 +99,8 @@ export async function POST(req: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true, sku }, { status: 201 });
+  // group already-synced unmapped campaigns/creatives to the new SKU right away
+  const grouped = await regroupUnmapped().catch(() => ({ campaigns: 0, creatives: 0 }));
+
+  return NextResponse.json({ ok: true, sku, grouped }, { status: 201 });
 }

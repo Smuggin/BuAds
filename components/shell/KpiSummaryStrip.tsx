@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getOverview } from "@/lib/api";
+import { useAppStore } from "@/store/AppProvider";
 import type { DeltaTone, SummaryCard } from "@/data/types";
 
 const TONE: Record<DeltaTone, string> = {
@@ -16,13 +17,15 @@ const TONE: Record<DeltaTone, string> = {
  */
 export function KpiSummaryStrip() {
   const [cards, setCards] = useState<SummaryCard[]>([]);
+  const accountFilter = useAppStore((s) => s.accountFilter);
+  const range = useAppStore((s) => s.range);
   useEffect(() => {
     let alive = true;
-    getOverview().then((d) => alive && setCards(d.summary));
+    getOverview(accountFilter, range).then((d) => alive && setCards(d.summary));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [accountFilter, range]);
 
   return (
     <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">

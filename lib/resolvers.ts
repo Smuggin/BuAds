@@ -6,6 +6,7 @@
 import type {
   Campaign,
   Category,
+  CloseMode,
   MetricKey,
   Product,
   Thresholds,
@@ -26,11 +27,11 @@ export function effThresholds(
   return t;
 }
 
-export function effAutoClose(
+export function effCloseMode(
   product: Product,
-  autoOverride: Record<string, boolean> = {},
-): boolean {
-  return autoOverride[product.sku] ?? product.autoClose;
+  closeOverride: Record<string, CloseMode> = {},
+): CloseMode {
+  return closeOverride[product.sku] ?? product.closeMode;
 }
 
 export function effBudget(

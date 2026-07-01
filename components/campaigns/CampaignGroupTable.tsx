@@ -3,6 +3,14 @@ import { dirSymbol, fmtMetric, fmtMoney } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { Toggle } from "@/components/ui/Toggle";
+import type { CloseMode } from "@/data/types";
+
+// Group-header pill per product close policy.
+const CLOSE_PILL: Record<CloseMode, { label: string; bg: string; fg: string }> = {
+  OFF: { label: "ปิด · Off", bg: "#f0f1f3", fg: "#838992" },
+  SUGGEST: { label: "แนะนำ · Suggest", bg: "#fbf3e2", fg: "#c98a16" },
+  AUTO: { label: "อัตโนมัติ · Auto", bg: "#e7f5ee", fg: "#1f8a5b" },
+};
 
 interface Props {
   group: CampaignGroup;
@@ -51,15 +59,12 @@ export function CampaignGroupTable({
           <span className="num text-[11.5px] text-muted">
             ★ {group.marked} · ⏸ {group.closed}
           </span>
-          {group.hasAuto && (
+          {group.hasAuto && group.closeMode && (
             <span
               className="rounded-pill px-[10px] py-1 text-[11px] font-semibold"
-              style={{
-                background: group.autoOn ? "#e7f5ee" : "#f0f1f3",
-                color: group.autoOn ? "#1f8a5b" : "#838992",
-              }}
+              style={{ background: CLOSE_PILL[group.closeMode].bg, color: CLOSE_PILL[group.closeMode].fg }}
             >
-              {group.autoOn ? "ปิดอัตโนมัติ · เปิด" : "ปิดอัตโนมัติ · ปิด"}
+              {CLOSE_PILL[group.closeMode].label}
             </span>
           )}
         </div>

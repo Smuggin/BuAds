@@ -1,12 +1,12 @@
 /**
- * Read-only sync: pull real Meta accounts → delivering campaigns → insights into
- * the Prisma cache. Delivery-driven (mirrors Ads Manager's last-30d view): we keep
- * campaigns that delivered in the window OR are currently active. Idempotent
- * (upsert by meta*Id). Never overwrites a user-set Campaign.productId. Server-only.
- *
- * Creatives/ad-level sync is deferred (campaign-focused pass) — see Phase 10 notes.
+ * Read-only sync: pull real Meta accounts → delivering campaigns → insights →
+ * every creative (+ its post & video funnel) into the Prisma cache. Delivery-driven
+ * (mirrors Ads Manager's last-30d view): we keep campaigns that delivered in the
+ * window OR are currently active. Idempotent (upsert by meta*Id). Never overwrites a
+ * user-set Campaign.productId. Creative pass lives in syncCreatives.ts. Server-only.
  */
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { accountMetaFor } from "@/lib/constants";
 import { evalCampaign } from "@/lib/kpi";
 import { graphGet, graphGetAll } from "./client";
@@ -14,6 +14,9 @@ import { getActiveToken } from "./auth";
 import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
 import { setCampaignStatus } from "./mutations";
 import { matchCampaignToProduct } from "./productMatch";
+import { syncCreatives, type CampaignRef } from "./syncCreatives";
+import { fetchBreakdown } from "./breakdown";
+import { INSIGHT_WINDOWS } from "@/lib/windows";
 
 const INSIGHT_FIELDS =
   "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpm,reach,frequency,purchase_roas,actions,cost_per_action_type";
@@ -30,6 +33,10 @@ export interface SyncResult {
   campaigns: number;
   insights: number;
   autoClosed: number;
+  creatives: number;
+  creativeLinks: number;
+  creativeInsights: number;
+  breakdowns: number;
   startedAt: string;
   errors: string[];
 }
@@ -59,10 +66,21 @@ export async function gatherAccounts(token: string): Promise<MetaAccount[]> {
   return [...map.values()];
 }
 
-export async function runSync(): Promise<SyncResult> {
+/**
+ * mode "full" (default): everything — campaign insights (7/30/90d), creatives,
+ * breakdown, auto-close. mode "map": light cron pass — discover campaigns, group
+ * each to its SKU, and refresh 30d campaign metrics only. Skips the heavy
+ * creative/breakdown/multi-window passes so it's safe to run on a schedule.
+ */
+export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<SyncResult> {
+  const mode = opts.mode ?? "full";
+  const campaignWindows = mode === "full" ? INSIGHT_WINDOWS : (["last_30d"] as const);
   const startedAt = new Date().toISOString();
   const token = await getActiveToken();
-  const counts: SyncResult = { accounts: 0, campaigns: 0, insights: 0, autoClosed: 0, startedAt, errors: [] };
+  const counts: SyncResult = {
+    accounts: 0, campaigns: 0, insights: 0, autoClosed: 0,
+    creatives: 0, creativeLinks: 0, creativeInsights: 0, breakdowns: 0, startedAt, errors: [],
+  };
 
   const allow = (process.env.META_AD_ACCOUNTS || "")
     .split(",")
@@ -90,20 +108,29 @@ export async function runSync(): Promise<SyncResult> {
 
       const products = await prisma.product.findMany({
         select: {
-          id: true, sku: true, thName: true, autoClose: true,
+          id: true, sku: true, thName: true, closeMode: true,
           thrRoas: true, thrCtr: true, thrCpa: true, thrCpm: true, thrCpp: true, thrCpr: true, thrCost: true,
         },
       });
       const productById = new Map(products.map((p) => [p.id, p]));
+      // metaCampaignId → local Campaign row, for linking creatives in the creative pass.
+      const campaignIdMap = new Map<string, CampaignRef>();
 
-      // 1. delivering campaigns (last 30d) — names + metrics come from insights
-      const ins = await graphGet<{ data: (MetaInsightRow & { campaign_id?: string; campaign_name?: string })[] }>(
-        `/${actId}/insights`,
-        { level: "campaign", date_preset: "last_30d", fields: INSIGHT_FIELDS, limit: 500 },
-        token,
-      );
-      const delivering = new Map<string, MetaInsightRow & { campaign_name?: string }>();
-      for (const row of ins.data ?? []) if (row.campaign_id) delivering.set(row.campaign_id, row);
+      // 1. campaign insights per window (7/30/90d) — names + metrics come from insights.
+      //    Selection + auto-close use the 30d map; all three are stored as snapshots.
+      type CampRow = MetaInsightRow & { campaign_id?: string; campaign_name?: string };
+      const insByWindow = new Map<string, Map<string, CampRow>>();
+      for (const window of campaignWindows) {
+        const res = await graphGet<{ data: CampRow[] }>(
+          `/${actId}/insights`,
+          { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500 },
+          token,
+        );
+        const m = new Map<string, CampRow>();
+        for (const row of res.data ?? []) if (row.campaign_id) m.set(row.campaign_id, row);
+        insByWindow.set(window, m);
+      }
+      const delivering = insByWindow.get("last_30d")!;
 
       // 2. campaign metadata (status/budget/objective)
       const metaRows = await graphGetAll<MetaCampaign>(
@@ -142,24 +169,29 @@ export async function runSync(): Promise<SyncResult> {
         const camp = await prisma.campaign.upsert({
           where: { metaCampaignId: id }, update: data, create: { metaCampaignId: id, ...data },
         });
+        campaignIdMap.set(id, { id: camp.id, productId });
         counts.campaigns++;
 
-        const row = delivering.get(id);
-        if (row) {
-          await prisma.insightSnapshot.deleteMany({ where: { level: "CAMPAIGN", window: "last_30d", campaignId: camp.id } });
-          await prisma.insightSnapshot.create({
-            data: { level: "CAMPAIGN", window: "last_30d", campaignId: camp.id, ...insightMetrics(row), fetchedAt: new Date() },
-          });
-          counts.insights++;
+        const row = delivering.get(id); // 30d row drives auto-close below
+        for (const window of campaignWindows) {
+          const wr = insByWindow.get(window)!.get(id);
+          await prisma.insightSnapshot.deleteMany({ where: { level: "CAMPAIGN", window, campaignId: camp.id } });
+          if (wr) {
+            await prisma.insightSnapshot.create({
+              data: { level: "CAMPAIGN", window, campaignId: camp.id, ...insightMetrics(wr), fetchedAt: new Date() },
+            });
+            counts.insights++;
+          }
         }
 
         // Auto-close: pause a still-active, breaching campaign in Meta when its
         // product opts in. Skips a campaign a human deliberately set (MANUAL).
         const product = productId ? productById.get(productId) : undefined;
         if (
+          mode === "full" &&
           AUTO_CLOSE_ENABLED &&
           row &&
-          product?.autoClose &&
+          product?.closeMode === "AUTO" &&
           metaStatus === "ACTIVE" &&
           statusSource !== "MANUAL"
         ) {
@@ -183,6 +215,37 @@ export async function runSync(): Promise<SyncResult> {
               counts.errors.push(`autoclose ${id}: ${e instanceof Error ? e.message : String(e)}`);
             }
           }
+        }
+      }
+
+      // map mode stops here — discovery + grouping + 30d campaign metrics only.
+      if (mode !== "full") continue;
+
+      // 4. creative pass — every ad/creative + its post & video funnel (after the
+      // campaign pass so links resolve against just-synced campaigns).
+      const cr = await syncCreatives(
+        { id: account.id, metaAccountId: actId },
+        token,
+        campaignIdMap,
+        products,
+      );
+      counts.creatives += cr.creatives;
+      counts.creativeLinks += cr.links;
+      counts.creativeInsights += cr.insights;
+      counts.errors.push(...cr.errors);
+
+      // 5. account-level audience breakdown per window (Breakdown page).
+      for (const window of INSIGHT_WINDOWS) {
+        try {
+          const data = (await fetchBreakdown(actId, token, window)) as unknown as Prisma.InputJsonValue;
+          await prisma.breakdownSnapshot.upsert({
+            where: { adAccountId_window: { adAccountId: account.id, window } },
+            update: { data, fetchedAt: new Date() },
+            create: { adAccountId: account.id, window, data, fetchedAt: new Date() },
+          });
+          counts.breakdowns++;
+        } catch (e) {
+          counts.errors.push(`breakdown ${actId} ${window}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     } catch (e) {

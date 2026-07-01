@@ -6,13 +6,14 @@
 import type {
   AccountKey,
   Campaign,
+  CloseMode,
   MetricKey,
   Product,
   Thresholds,
 } from "@/data/types";
-import { ACCOUNT_META, accountMetaFor, METRIC_DEFS, RAMP } from "./constants";
+import { accountMetaFor, METRIC_DEFS, RAMP } from "./constants";
 import { fmtMetric } from "./format";
-import { effAutoClose, effBudget, effThresholds } from "./resolvers";
+import { effBudget, effCloseMode, effThresholds } from "./resolvers";
 import { evalCampaign, resolveCampaignState, type CampaignState, type EvalResult } from "./kpi";
 
 export type GroupBy = "product" | "account" | "none";
@@ -46,7 +47,7 @@ export interface CampaignGroup {
   closed: number;
   count: number;
   hasAuto: boolean;
-  autoOn: boolean;
+  closeMode: CloseMode | null; // product groups carry their close policy
   thresholds: Thresholds | null; // product groups show ≥/≤ values in headers
   rows: ResolvedRow[];
 }
@@ -60,7 +61,7 @@ export interface BuildParams {
   campSort: CampSortKey;
   campDir: SortDir;
   prodThr: Record<string, Partial<Thresholds>>;
-  autoOverride: Record<string, boolean>;
+  closeOverride: Record<string, CloseMode>;
   budgetOverride: Record<string, number>;
   campOverride: Record<string, boolean>;
 }
@@ -104,11 +105,11 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
     };
   }
   const thresholds = effThresholds(p, params.prodThr);
-  const auto = effAutoClose(p, params.autoOverride);
+  const advise = effCloseMode(p, params.closeOverride) !== "OFF";
   const evalResult = evalCampaign(c.metrics, thresholds);
   const state = resolveCampaignState(
     evalResult.verdict,
-    auto,
+    advise,
     params.campOverride[c.id],
     c.status === "ACTIVE",
   );
@@ -121,7 +122,7 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
     evalResult.verdict === "marked"
       ? "ROAS เกินเกณฑ์ · พร้อม Scale"
       : evalResult.verdict === "breach"
-        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${auto ? " · แนะนำให้ปิด" : " · รอตรวจสอบ"}`
+        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${advise ? " · แนะนำให้ปิด" : " · รอตรวจสอบ"}`
         : "อยู่ในเกณฑ์ที่ตั้งไว้";
   return {
     campaign: c,
@@ -187,7 +188,7 @@ export function buildCampaignGroups(params: BuildParams): BuildResult {
         rows.filter((r) => r.product?.sku === p.sku),
         p,
         products,
-        effAutoClose(p, params.autoOverride),
+        effCloseMode(p, params.closeOverride),
       ),
     );
     const unmapped = rows.filter((r) => r.unmapped);
@@ -214,7 +215,7 @@ function makeGroup(
   rows: ResolvedRow[],
   product: Product | null,
   products: Product[],
-  autoOn = false,
+  closeMode: CloseMode | null = null,
 ): CampaignGroup {
   const marked = rows.filter((r) => r.statusRank === 2).length;
   const closed = rows.filter((r) => !r.state.on).length;
@@ -229,7 +230,7 @@ function makeGroup(
       initials: meta.initials,
       color: meta.color,
       hasAuto: false,
-      autoOn: false,
+      closeMode: null,
       thresholds: null,
     };
   }
@@ -242,7 +243,7 @@ function makeGroup(
       initials: product.sku.slice(0, 2),
       color: RAMP[pi % RAMP.length],
       hasAuto: true,
-      autoOn,
+      closeMode,
       thresholds: rows[0]?.thresholds ?? product.thresholds,
     };
   }
@@ -253,7 +254,7 @@ function makeGroup(
     initials: "∑",
     color: "#6b7280",
     hasAuto: false,
-    autoOn: false,
+    closeMode: null,
     thresholds: null,
   };
 }
@@ -270,7 +271,29 @@ function makeUnmappedGroup(rows: ResolvedRow[]): CampaignGroup {
     closed: rows.filter((r) => !r.state.on).length,
     count: rows.length,
     hasAuto: false,
-    autoOn: false,
+    closeMode: null,
+    thresholds: null,
+    rows,
+  };
+}
+
+/** Synthetic "should close" group: active campaigns breaching their KPIs whose
+ *  product close policy is SUGGEST/AUTO (state.shouldClose). null when none. */
+export function shouldCloseGroup(groups: CampaignGroup[]): CampaignGroup | null {
+  const rows = groups.flatMap((g) => g.rows).filter((r) => r.state.shouldClose);
+  if (!rows.length) return null;
+  return {
+    kind: "none",
+    key: "__should_close__",
+    title: "⚠ ควรปิด · Should close",
+    subtitle: `แคมเปญที่เกินเกณฑ์และยังเปิดอยู่ · ${rows.length} แคมเปญ`,
+    initials: "⚠",
+    color: "#d6453d",
+    marked: 0,
+    closed: 0,
+    count: rows.length,
+    hasAuto: false,
+    closeMode: null,
     thresholds: null,
     rows,
   };

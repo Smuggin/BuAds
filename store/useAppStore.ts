@@ -9,6 +9,7 @@ import { createStore } from "zustand/vanilla";
 import type {
   AccountKey,
   Category,
+  CloseMode,
   MetricKey,
   Product,
   Thresholds,
@@ -65,6 +66,7 @@ export interface AppState {
 
   // top bar
   range: RangeId;
+  accountFilter: AccountKey | "all"; // global ad-account scope (metaAccountId | all)
 
   // notifications
   notifOpen: boolean;
@@ -81,7 +83,7 @@ export interface AppState {
   campOverride: Record<string, boolean>;
   budgetOverride: Record<string, number>;
   prodThr: Record<string, Partial<Thresholds>>;
-  autoOverride: Record<string, boolean>;
+  closeOverride: Record<string, CloseMode>;
   creativeOpen: Record<string, boolean>;
   ruleOverride: Record<string, boolean>;
 
@@ -116,6 +118,7 @@ export interface AppActions {
   setAccent: (accent: AccentKeyTheme) => void;
   toggleColorByPerformance: () => void;
   setRange: (range: RangeId) => void;
+  setAccountFilter: (account: AccountKey | "all") => void;
 
   toggleNotif: () => void;
   closeNotif: () => void;
@@ -128,7 +131,7 @@ export interface AppActions {
   toggleCamp: (id: string, defaultOn: boolean) => void;
   setBudgetOverride: (id: string, value: number) => void;
   setThreshold: (sku: string, key: MetricKey, value: number) => void;
-  toggleAutoClose: (sku: string, base: boolean) => void;
+  setCloseMode: (sku: string, mode: CloseMode) => void;
   toggleCreativeOpen: (id: string, defaultOn: boolean) => void;
   toggleRule: (id: string, base: boolean) => void;
 
@@ -182,6 +185,7 @@ export const initialAppState: AppState = {
   accent: "blue",
   colorByPerformance: true,
   range: "30d",
+  accountFilter: "all",
   notifOpen: false,
   notifRead: false,
   groupBy: "product",
@@ -192,7 +196,7 @@ export const initialAppState: AppState = {
   campOverride: {},
   budgetOverride: {},
   prodThr: {},
-  autoOverride: {},
+  closeOverride: {},
   creativeOpen: {},
   ruleOverride: {},
   budgetModal: null,
@@ -222,6 +226,7 @@ export function createAppStore(init: Partial<AppState> = {}) {
     toggleColorByPerformance: () =>
       set((s) => ({ colorByPerformance: !s.colorByPerformance })),
     setRange: (range) => set({ range }),
+    setAccountFilter: (accountFilter) => set({ accountFilter }),
 
     toggleNotif: () => set((s) => ({ notifOpen: !s.notifOpen, notifRead: true })),
     closeNotif: () => set({ notifOpen: false }),
@@ -251,11 +256,8 @@ export function createAppStore(init: Partial<AppState> = {}) {
           [sku]: { ...(s.prodThr[sku] ?? {}), [key]: value },
         },
       })),
-    toggleAutoClose: (sku, base) =>
-      set((s) => {
-        const cur = s.autoOverride[sku] ?? base;
-        return { autoOverride: { ...s.autoOverride, [sku]: !cur } };
-      }),
+    setCloseMode: (sku, mode) =>
+      set((s) => ({ closeOverride: { ...s.closeOverride, [sku]: mode } })),
     toggleCreativeOpen: (id, defaultOn) =>
       set((s) => {
         const cur = s.creativeOpen[id] ?? defaultOn;
