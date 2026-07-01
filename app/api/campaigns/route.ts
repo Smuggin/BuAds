@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { rangeToWindow, windowDays } from "@/lib/windows";
+import { rangeToWindow, windowDays, spanDays } from "@/lib/windows";
 import type { AccountKey, Campaign } from "@/data/types";
 import { requireAuth } from "@/lib/auth/guard";
 
 export async function GET(req: Request) {
   const denied = await requireAuth();
   if (denied) return denied;
-  const window = rangeToWindow(new URL(req.url).searchParams.get("range"));
-  const days = windowDays(window);
+  const params = new URL(req.url).searchParams;
+  const window = rangeToWindow(params.get("range"));
+  const days = windowDays(window, spanDays(params.get("since"), params.get("until")));
   // Campaigns that delivered in the selected window (mirrors Ads Manager) — i.e. have
   // an insight snapshot. Paused-but-delivered campaigns are included; never-delivered
   // ones stay in the DB but out of the view.

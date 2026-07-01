@@ -104,6 +104,9 @@ export async function resetCampaignBudgets(opts: { dryRun?: boolean } = {}): Pro
     while (i < targets.length) {
       const id = targets[i++];
       try {
+        // Budget-only: the Meta write sends just daily_budget, and the DB mirror updates
+        // only dailyBudgetMinor. Campaign on/off (status) is never read or written here,
+        // so an active campaign stays active and a paused one stays paused.
         await setCampaignBudget(id, TARGET_MINOR, token);
         await prisma.campaign.updateMany({
           where: { metaCampaignId: id },

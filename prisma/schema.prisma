@@ -140,6 +140,7 @@ model Product {
   imageId    String?
   image      Attachment?      @relation(fields: [imageId], references: [id])
   custom     Boolean          @default(false)
+  sortOrder  Int              @default(0) // manual display order (drag-to-reorder in Product KPI)
   closeMode  CloseMode        @default(SUGGEST) // OFF | SUGGEST (advisory) | AUTO (auto-pause)
   skipMetrics String[]        @default([]) // MetricKeys excluded from judging (exceptions)
   categoryId String

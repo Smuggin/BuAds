@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { accountMetaFor } from "@/lib/constants";
 import { evalCampaign } from "@/lib/kpi";
+import { notifyOnce } from "@/lib/notify";
 import type { MetricKey } from "@/data/types";
 import { graphGet, graphGetAll } from "./client";
 import { getActiveToken } from "./auth";
@@ -19,7 +20,7 @@ import { syncCreatives, type CampaignRef } from "./syncCreatives";
 import { fetchBreakdown } from "./breakdown";
 import { INSIGHT_WINDOWS } from "@/lib/windows";
 
-const INSIGHT_FIELDS =
+export const INSIGHT_FIELDS =
   "campaign_id,campaign_name,spend,impressions,clicks,ctr,cpm,reach,frequency,purchase_roas,actions,cost_per_action_type";
 
 // Auto-close write-back to Meta (pauses losers) is OPT-IN — off until tested.
@@ -73,8 +74,11 @@ export async function gatherAccounts(token: string): Promise<MetaAccount[]> {
  * each to its SKU, and refresh 30d campaign metrics only. Skips the heavy
  * creative/breakdown/multi-window passes so it's safe to run on a schedule.
  */
-export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<SyncResult> {
+export async function runSync(
+  opts: { mode?: "full" | "map"; onProgress?: (p: { stage: string; pct: number }) => void } = {},
+): Promise<SyncResult> {
   const mode = opts.mode ?? "full";
+  const onProgress = opts.onProgress;
   const campaignWindows = mode === "full" ? INSIGHT_WINDOWS : (["last_30d"] as const);
   const startedAt = new Date().toISOString();
   const token = await getActiveToken();
@@ -89,10 +93,18 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
     .filter(Boolean);
 
   const accounts = await gatherAccounts(token);
+  const targets = accounts.filter((a) => !allow.length || allow.includes(`act_${a.account_id}`));
+  // Progress: one substep per account per stage (campaigns [+ creatives, breakdown in full]).
+  const subPerAcct = mode === "full" ? 3 : 1;
+  const totalSteps = Math.max(1, targets.length * subPerAcct);
+  let doneSteps = 0;
+  const emit = (stage: string) =>
+    onProgress?.({ stage, pct: Math.min(99, Math.round((doneSteps / totalSteps) * 100)) });
+  onProgress?.({ stage: `พบ ${targets.length} บัญชี · ${targets.length} accounts`, pct: 2 });
 
-  for (const a of accounts) {
+  for (let ai = 0; ai < targets.length; ai++) {
+    const a = targets[ai];
     const actId = `act_${a.account_id}`;
-    if (allow.length && !allow.includes(actId)) continue;
     try {
       const meta = accountMetaFor(actId, a.name);
       const status = a.account_status === 1 ? "ACTIVE" : "WARNING";
@@ -106,6 +118,7 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
         },
       });
       counts.accounts++;
+      emit(`แคมเปญ · Campaigns — ${a.name} (${ai + 1}/${targets.length})`);
 
       const products = await prisma.product.findMany({
         select: {
@@ -185,17 +198,10 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
           }
         }
 
-        // Auto-close: pause a still-active, breaching campaign in Meta when its
-        // product opts in. Skips a campaign a human deliberately set (MANUAL).
+        // KPI verdict for a still-active campaign whose product enforces a close
+        // policy (SUGGEST/AUTO). Drives the "ควรปิด" alert and the AUTO auto-close.
         const product = productId ? productById.get(productId) : undefined;
-        if (
-          mode === "full" &&
-          AUTO_CLOSE_ENABLED &&
-          row &&
-          product?.closeMode === "AUTO" &&
-          metaStatus === "ACTIVE" &&
-          statusSource !== "MANUAL"
-        ) {
+        if (row && product && product.closeMode !== "OFF" && metaStatus === "ACTIVE") {
           const m = insightMetrics(row);
           const verdict = evalCampaign(
             { roas: m.roas, ctr: m.ctr, cpa: m.cpa, cpm: m.cpm, cpp: m.cpp, cpr: m.cpr, cost: m.spend / INSIGHT_WINDOW_DAYS },
@@ -203,28 +209,44 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
             product.skipMetrics as MetricKey[],
           ).verdict;
           if (verdict === "breach") {
-            try {
-              await setCampaignStatus(id, "PAUSED", token);
-              await prisma.campaign.update({
-                where: { metaCampaignId: id },
-                data: { status: "PAUSED", statusSource: "AUTO" },
-              });
-              await prisma.activityLog.create({
-                data: { actor: "AUTO", type: "AUTO_CLOSE", campaignId: camp.id, productId, title: "ปิดแคมเปญอัตโนมัติ", detail: `${name} · เกินเกณฑ์ KPI` },
-              });
-              counts.autoClosed++;
-            } catch (e) {
-              counts.errors.push(`autoclose ${id}: ${e instanceof Error ? e.message : String(e)}`);
+            // Notify the team (once/day) that this active campaign should be closed.
+            await notifyOnce({
+              kind: "warn",
+              title: `ควรปิด · ${name}`,
+              detail: `${name} เกินเกณฑ์ KPI · ยังเปิดอยู่ใน Meta — แนะนำให้ปิด`,
+            }).catch(() => {});
+            // Auto-close write-back (opt-in) — AUTO products only, never a human-set one.
+            if (
+              mode === "full" &&
+              AUTO_CLOSE_ENABLED &&
+              product.closeMode === "AUTO" &&
+              statusSource !== "MANUAL"
+            ) {
+              try {
+                await setCampaignStatus(id, "PAUSED", token);
+                await prisma.campaign.update({
+                  where: { metaCampaignId: id },
+                  data: { status: "PAUSED", statusSource: "AUTO" },
+                });
+                await prisma.activityLog.create({
+                  data: { actor: "AUTO", type: "AUTO_CLOSE", campaignId: camp.id, productId, title: "ปิดแคมเปญอัตโนมัติ", detail: `${name} · เกินเกณฑ์ KPI` },
+                });
+                counts.autoClosed++;
+              } catch (e) {
+                counts.errors.push(`autoclose ${id}: ${e instanceof Error ? e.message : String(e)}`);
+              }
             }
           }
         }
       }
 
       // map mode stops here — discovery + grouping + 30d campaign metrics only.
+      doneSteps++; // campaign + insights stage complete
       if (mode !== "full") continue;
 
       // 4. creative pass — every ad/creative + its post & video funnel (after the
       // campaign pass so links resolve against just-synced campaigns).
+      emit(`ครีเอทีฟ · Creatives — ${a.name} (${ai + 1}/${targets.length})`);
       const cr = await syncCreatives(
         { id: account.id, metaAccountId: actId },
         token,
@@ -235,11 +257,16 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
       counts.creativeLinks += cr.links;
       counts.creativeInsights += cr.insights;
       counts.errors.push(...cr.errors);
+      doneSteps++; // creative stage complete
 
       // 5. account-level audience breakdown per window (Breakdown page).
+      emit(`ผู้ชม · Audience — ${a.name} (${ai + 1}/${targets.length})`);
       for (const window of INSIGHT_WINDOWS) {
         try {
-          const data = (await fetchBreakdown(actId, token, window)) as unknown as Prisma.InputJsonValue;
+          const data = (await fetchBreakdown(actId, token, {
+            key: window,
+            datePreset: window,
+          })) as unknown as Prisma.InputJsonValue;
           await prisma.breakdownSnapshot.upsert({
             where: { adAccountId_window: { adAccountId: account.id, window } },
             update: { data, fetchedAt: new Date() },
@@ -250,10 +277,12 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
           counts.errors.push(`breakdown ${actId} ${window}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
+      doneSteps++; // breakdown stage complete
     } catch (e) {
       counts.errors.push(`${actId}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
+  onProgress?.({ stage: "เสร็จสิ้น · Done", pct: 100 });
   return counts;
 }

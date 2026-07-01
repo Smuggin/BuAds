@@ -80,6 +80,9 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, closeOv
           </div>
           <div className="mt-1 text-[12.5px] text-muted">
             {product?.th ?? creative.sku} · {creative.sku} · ใช้ใน {campRows.length} แคมเปญ
+            {creative.groupSize && creative.groupSize > 1
+              ? ` · รวมจาก ${creative.groupSize} โฆษณา`
+              : ""}
           </div>
           {creative.caption && (
             <div className="mt-[5px] line-clamp-2 max-w-[520px] text-[12px] text-ink-2">

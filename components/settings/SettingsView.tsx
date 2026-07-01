@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getProducts, getSettings, runMetaSync } from "@/lib/api";
+import { getProducts, getSettings } from "@/lib/api";
 import { allCategories, effProduct, isConnected } from "@/lib/resolvers";
 import { DEFAULT_CATEGORIES } from "@/data/categories";
 import { useAppStore } from "@/store/AppProvider";
@@ -32,7 +32,9 @@ interface SettingsData {
 export function SettingsView() {
   const [data, setData] = useState<SettingsData | null>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
-  const [syncingNow, setSyncingNow] = useState(false);
+  const startSync = useAppStore((s) => s.startSync);
+  const syncProgress = useAppStore((s) => s.syncProgress);
+  const syncBusy = !!syncProgress;
 
   const connOverride = useAppStore((s) => s.connOverride);
   const syncMap = useAppStore((s) => s.syncMap);
@@ -100,10 +102,9 @@ export function SettingsView() {
     });
 
   const onSync = async () => {
-    if (syncingNow) return;
-    setSyncingNow(true);
+    if (syncBusy) return;
     try {
-      const r = await runMetaSync();
+      const r = await startSync(); // progress streams into the store → bell shows the bar
       await reload();
       const closed = r.autoClosed ? ` · ปิดอัตโนมัติ ${r.autoClosed}` : "";
       const creatives = r.creatives ? ` · ${r.creatives} ครีเอทีฟ` : "";
@@ -111,8 +112,6 @@ export function SettingsView() {
       alert(r.errors.length ? `${msg}\nมีข้อผิดพลาดบางบัญชี: ${r.errors.join("; ")}` : msg);
     } catch (e) {
       alert(e instanceof Error ? e.message : "ซิงค์ไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Meta");
-    } finally {
-      setSyncingNow(false);
     }
   };
 
@@ -128,10 +127,11 @@ export function SettingsView() {
         <button
           type="button"
           onClick={onSync}
-          disabled={syncingNow}
+          disabled={syncBusy}
           className="inline-flex items-center gap-2 rounded-input bg-accent px-[15px] py-[9px] text-[12.5px] font-semibold text-white disabled:opacity-60"
         >
-          <Icon name="refresh" size={14} /> {syncingNow ? "กำลังซิงค์…" : "ซิงค์ตอนนี้ · Sync now"}
+          <Icon name="refresh" size={14} />{" "}
+          {syncProgress ? `กำลังซิงค์ ${syncProgress.pct}%` : "ซิงค์ตอนนี้ · Sync now"}
         </button>
       </section>
 
@@ -186,7 +186,7 @@ export function SettingsView() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={onSync} disabled={syncingNow} aria-label="ซิงค์ใหม่" className="flex h-8 w-8 items-center justify-center rounded-input border border-[#dde1e7] text-slate disabled:opacity-60">
+                      <button type="button" onClick={onSync} disabled={syncBusy} aria-label="ซิงค์ใหม่" className="flex h-8 w-8 items-center justify-center rounded-input border border-[#dde1e7] text-slate disabled:opacity-60">
                         <Icon name="refresh" size={14} />
                       </button>
                       <button type="button" onClick={() => disconnectAccount(a.id)} aria-label="ยกเลิกการเชื่อมต่อ" className="flex h-8 w-8 items-center justify-center rounded-input border border-[#f0d8d6] text-danger">

@@ -24,6 +24,11 @@ export function NotificationsBell() {
   const toggle = useAppStore((s) => s.toggleNotif);
   const close = useAppStore((s) => s.closeNotif);
   const ruleOverride = useAppStore((s) => s.ruleOverride);
+  const syncProgress = useAppStore((s) => s.syncProgress);
+
+  const syncing = !!syncProgress;
+  const pct = syncProgress?.pct ?? 0;
+  const RING_C = 2 * Math.PI * 17; // ring circumference (r=17)
 
   const [rules, setRules] = useState<Rule[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -47,13 +52,40 @@ export function NotificationsBell() {
       <button
         type="button"
         onClick={toggle}
-        title="การแจ้งเตือน"
-        aria-label="การแจ้งเตือน · Notifications"
+        title={syncing ? `กำลังซิงค์ · ${syncProgress?.stage}` : "การแจ้งเตือน"}
+        aria-label={
+          syncing
+            ? `กำลังซิงค์ ${pct}% · ${syncProgress?.stage}`
+            : "การแจ้งเตือน · Notifications"
+        }
         aria-expanded={open}
         className={`relative flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-control border border-[#dde1e7] transition-colors duration-bg ${
           open ? "bg-ink text-white" : "bg-card text-ink"
         }`}
       >
+        {/* radial progress ring around the icon while a manual sync runs */}
+        {syncing && (
+          <svg
+            className="pointer-events-none absolute inset-0"
+            viewBox="0 0 38 38"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="19" cy="19" r="17" stroke="var(--accent)" strokeOpacity="0.18" strokeWidth="2.5" />
+            <circle
+              cx="19"
+              cy="19"
+              r="17"
+              stroke="var(--accent)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={RING_C}
+              strokeDashoffset={RING_C * (1 - pct / 100)}
+              transform="rotate(-90 19 19)"
+              style={{ transition: "stroke-dashoffset .3s ease" }}
+            />
+          </svg>
+        )}
         <Icon name="bell" size={17} />
         {unread > 0 && (
           <span className="num absolute -right-[5px] -top-[5px] flex h-[17px] min-w-[17px] items-center justify-center rounded-[9px] border-2 border-page-bg bg-danger px-1 text-[10px] font-bold text-white">
@@ -77,6 +109,22 @@ export function NotificationsBell() {
                 {warnCount} ต้องตรวจสอบ
               </span>
             </div>
+
+            {syncing && (
+              <div className="border-b border-border-2 px-4 py-[11px]">
+                <div className="flex items-center justify-between text-[12px] font-semibold text-accent">
+                  <span>กำลังซิงค์ · Syncing Meta</span>
+                  <span className="num">{pct}%</span>
+                </div>
+                <div className="mt-[3px] truncate text-[11.5px] text-muted">{syncProgress?.stage}</div>
+                <div className="mt-[7px] h-[5px] w-full overflow-hidden rounded-full bg-accent/[0.14]">
+                  <div
+                    className="h-full rounded-full bg-accent"
+                    style={{ width: `${pct}%`, transition: "width .3s ease" }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div
               className="flex items-center gap-2 border-b border-border-2 px-4 py-[11px]"

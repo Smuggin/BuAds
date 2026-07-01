@@ -51,6 +51,7 @@ export function CampaignsView() {
   const creativeOpen = useAppStore((s) => s.creativeOpen);
   const accountFilter = useAppStore((s) => s.accountFilter);
   const range = useAppStore((s) => s.range);
+  const customRange = useAppStore((s) => s.customRange);
 
   const setGroupBy = useAppStore((s) => s.setGroupBy);
   const setGroupSort = useAppStore((s) => s.setGroupSort);
@@ -72,7 +73,7 @@ export function CampaignsView() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getProducts(), getCampaigns(range), getCreatives(range), getLogs()]).then(
+    Promise.all([getProducts(), getCampaigns(range, customRange), getCreatives(range), getLogs()]).then(
       ([p, c, cr, l]) => {
         if (!alive) return;
         setProducts(p);
@@ -84,13 +85,13 @@ export function CampaignsView() {
     return () => {
       alive = false;
     };
-  }, [range]);
+  }, [range, customRange]);
 
   // Near-realtime on/off: refetch the (background-poller-refreshed) cache every 120s,
   // and pull a fresh status the moment the tab regains focus, so the toggles track
   // Meta Business Suite without a manual sync.
   useEffect(() => {
-    const refetch = () => getCampaigns(range).then(setCampaigns).catch(() => {});
+    const refetch = () => getCampaigns(range, customRange).then(setCampaigns).catch(() => {});
     const interval = setInterval(refetch, 120_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void runStatusSync().then(refetch);
@@ -100,7 +101,7 @@ export function CampaignsView() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [range]);
+  }, [range, customRange]);
 
   if (!products || !campaigns || !creatives || !logs) {
     return (
@@ -115,7 +116,7 @@ export function CampaignsView() {
   const productBySku = (sku: string) => products.find((p) => p.sku === sku)!;
   const campaignById = (id: string) => campaigns.find((c) => c.id === id)!;
   const isMapped = (c: Campaign) => products.some((p) => p.sku === c.sku);
-  const loadCampaigns = () => getCampaigns(range).then(setCampaigns);
+  const loadCampaigns = () => getCampaigns(range, customRange).then(setCampaigns);
   // Clicking a campaign with no product attached can't open the (product-keyed)
   // detail — prompt to assign a product first.
   const handleOpenDetail = (id: string) => {

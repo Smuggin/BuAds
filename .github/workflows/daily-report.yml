@@ -1,0 +1,23 @@
+name: Daily 22:00 report
+
+# Fires the AdsHub daily report (good creatives + should-close backlog → notifications).
+# Vercel Hobby allows only one cron/day (used at midnight for budget-reset + sync), so
+# this second daily trigger runs on GitHub Actions instead.
+#
+# Requires two repo secrets:
+#   REPORT_URL   – e.g. https://buads.vercel.app/api/cron/report
+#   CRON_SECRET  – must match the CRON_SECRET env var set in Vercel
+on:
+  schedule:
+    - cron: "0 15 * * *" # 15:00 UTC = 22:00 Asia/Bangkok
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger /api/cron/report
+        run: |
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.REPORT_URL }}"

@@ -1,7 +1,76 @@
 import { describe, it, expect } from "vitest";
-import { shapeBreakdown, emptyBreakdownAccum, aggregateAudienceProfiles, type BreakdownAccum } from "./breakdown";
+import {
+  shapeBreakdown,
+  emptyBreakdownAccum,
+  aggregateAudienceProfiles,
+  foldDailySpend,
+  foldDailyByAccount,
+  type BreakdownAccum,
+} from "./breakdown";
 
 const seg = (impr: number, spend: number, rev: number) => ({ impr, spend, rev });
+
+describe("foldDailySpend", () => {
+  it("returns empty arrays when no accums carry daily data", () => {
+    expect(foldDailySpend([])).toEqual({ dates: [], spend: [] });
+    expect(foldDailySpend([emptyBreakdownAccum()])).toEqual({ dates: [], spend: [] });
+  });
+
+  it("sums spend by date across accounts and sorts by date ascending", () => {
+    const a = emptyBreakdownAccum();
+    a.daily = { "2026-06-02": 100, "2026-06-01": 50 };
+    const b = emptyBreakdownAccum();
+    b.daily = { "2026-06-01": 25, "2026-06-03": 10 };
+    const { dates, spend } = foldDailySpend([a, b]);
+    expect(dates).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
+    expect(spend).toEqual([75, 100, 10]); // 50+25, 100, 10
+  });
+
+  it("rounds spend and tolerates a missing daily map", () => {
+    const a = emptyBreakdownAccum();
+    a.daily = { "2026-06-01": 12.4, "2026-06-02": 12.6 };
+    const b = emptyBreakdownAccum();
+    delete b.daily;
+    expect(foldDailySpend([a, b]).spend).toEqual([12, 13]);
+  });
+});
+
+describe("foldDailyByAccount", () => {
+  it("keeps each account as its own series on a shared, sorted date axis", () => {
+    const a = emptyBreakdownAccum();
+    a.daily = { "2026-06-02": 100, "2026-06-01": 50 };
+    a.dailyRev = { "2026-06-02": 300, "2026-06-01": 150 };
+    const b = emptyBreakdownAccum();
+    b.daily = { "2026-06-01": 25, "2026-06-03": 10 };
+    b.dailyRev = { "2026-06-01": 40, "2026-06-03": 20 };
+    const { dates, accounts } = foldDailyByAccount([
+      { metaAccountId: "act_A", name: "A", accum: a },
+      { metaAccountId: "act_B", name: "B", accum: b },
+    ]);
+    expect(dates).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
+    // account A is zero-filled on 06-03 (a date only B has)
+    expect(accounts[0]).toMatchObject({ metaAccountId: "act_A", spend: [50, 100, 0], revenue: [150, 300, 0] });
+    expect(accounts[1]).toMatchObject({ metaAccountId: "act_B", spend: [25, 0, 10], revenue: [40, 0, 20] });
+  });
+
+  it("treats a missing dailyRev as zeros and drops empty accounts", () => {
+    const a = emptyBreakdownAccum();
+    a.daily = { "2026-06-01": 12.4, "2026-06-02": 12.6 };
+    delete a.dailyRev;
+    const empty = emptyBreakdownAccum(); // no daily/rev → dropped
+    const { dates, accounts } = foldDailyByAccount([
+      { metaAccountId: "act_A", name: "A", accum: a },
+      { metaAccountId: "act_Z", name: "Z", accum: empty },
+    ]);
+    expect(dates).toEqual(["2026-06-01", "2026-06-02"]);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ metaAccountId: "act_A", spend: [12, 13], revenue: [0, 0] });
+  });
+
+  it("returns empty axis and no accounts when nothing carries daily data", () => {
+    expect(foldDailyByAccount([])).toEqual({ dates: [], accounts: [] });
+  });
+});
 
 describe("shapeBreakdown", () => {
   it("returns zeroed-but-shaped rows for no data", () => {

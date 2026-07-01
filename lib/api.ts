@@ -15,6 +15,7 @@ import type {
   MetricKey,
   Notification,
   OverviewAccountRow,
+  OverviewDailyAccount,
   Product,
   Rule,
   SummaryCard,
@@ -27,6 +28,8 @@ export type { BreakdownData };
 export interface OverviewData {
   summary: SummaryCard[];
   daily: number[];
+  dailyDates?: string[]; // ISO dates aligned to `daily`, for the chart axis
+  dailyByAccount?: OverviewDailyAccount[]; // per-account spend+revenue series (stacked chart)
   accounts: OverviewAccountRow[];
   breakdown: {
     age: AgeRow[];
@@ -64,6 +67,59 @@ export async function runMetaSync(): Promise<SyncResult> {
   return data as SyncResult;
 }
 
+type ProgressFn = (p: { stage: string; pct: number }) => void;
+
+/** Read an NDJSON sync stream: fire onProgress per stage, return the `done` result. */
+async function readSyncStream(res: Response, onProgress: ProgressFn): Promise<unknown> {
+  if (!res.ok || !res.body) throw new Error(`sync failed (${res.status})`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let result: unknown = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      const msg = JSON.parse(line) as
+        | { type: "progress"; stage: string; pct: number }
+        | { type: "done"; result: unknown }
+        | { type: "error"; error: string };
+      if (msg.type === "progress") onProgress({ stage: msg.stage, pct: msg.pct });
+      else if (msg.type === "done") result = msg.result;
+      else if (msg.type === "error") throw new Error(msg.error);
+    }
+  }
+  return result;
+}
+
+/** Full Meta sync, streaming staged progress. Resolves with the final result. */
+export async function streamMetaSync(onProgress: ProgressFn): Promise<SyncResult> {
+  const res = await fetch("/api/sync/stream", { method: "POST" });
+  const result = await readSyncStream(res, onProgress);
+  if (!result) throw new Error("sync ended without a result");
+  return result as SyncResult;
+}
+
+/** On-demand sync for "today" / custom range, streaming staged progress. */
+export async function streamRangeSync(
+  range: string,
+  custom: { since: string; until: string } | null,
+  onProgress: ProgressFn,
+): Promise<void> {
+  const q = new URLSearchParams({ range });
+  if (custom) {
+    q.set("since", custom.since);
+    q.set("until", custom.until);
+  }
+  const res = await fetch(`/api/sync/range?${q.toString()}`, { method: "POST" });
+  await readSyncStream(res, onProgress);
+}
+
 /** Lightweight on/off status mirror from Meta (no insights). Best-effort — used by
  *  the Campaigns page on tab focus; the next poll/refetch catches up on error. */
 export async function runStatusSync(): Promise<void> {
@@ -97,6 +153,19 @@ export async function patchProduct(
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error ?? `save failed (${res.status})`);
+  }
+}
+
+/** Persist a manual product order (drag-to-reorder). `skus` in desired order. */
+export async function reorderProducts(skus: string[]): Promise<void> {
+  const res = await fetch("/api/products/reorder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ skus }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? `reorder failed (${res.status})`);
   }
 }
 
@@ -183,8 +252,17 @@ export const getProductBreakdown = (sku: string, account: string, range: string)
   getJSON<AudienceProfile | null>(
     `/api/breakdown/product?sku=${encodeURIComponent(sku)}&account=${encodeURIComponent(account)}&range=${range}`,
   );
-export const getCampaigns = (range = "30d") => getJSON<Campaign[]>(`/api/campaigns?range=${range}`);
-export const getCreatives = (range = "30d") => getJSON<Creative[]>(`/api/creatives?range=${range}`);
+export const getCampaigns = (range = "30d", custom?: { since: string; until: string } | null) => {
+  const q = new URLSearchParams({ range });
+  if (custom) {
+    q.set("since", custom.since);
+    q.set("until", custom.until);
+  }
+  return getJSON<Campaign[]>(`/api/campaigns?${q.toString()}`);
+};
+/** Post-deduped, 30d-gated creatives, scoped to the given account (metaAccountId | "all"). */
+export const getCreatives = (range = "30d", account = "all") =>
+  getJSON<Creative[]>(`/api/creatives?range=${range}&account=${encodeURIComponent(account)}`);
 export const getRules = () => getJSON<Rule[]>("/api/rules");
 /** Persist a rule's on/off (the cron honors Rule.on). */
 export async function patchRule(id: string, on: boolean): Promise<void> {
