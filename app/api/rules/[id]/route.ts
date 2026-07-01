@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth/guard";
 
 /** Toggle a rule on/off (persists Rule.on so the cron honors it). */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const { id } = await params;
   const body = (await req.json().catch(() => null)) as { on?: boolean } | null;
   if (!body || typeof body.on !== "boolean") {

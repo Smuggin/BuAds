@@ -9,6 +9,7 @@
  * Relative imports — tsx doesn't resolve the @/ alias.
  */
 import { PrismaClient } from "@prisma/client";
+import { hash } from "@node-rs/argon2";
 import { DEFAULT_CATEGORIES } from "../data/categories";
 
 const prisma = new PrismaClient();
@@ -20,6 +21,27 @@ async function main() {
     update: {},
     create: { email: "team@adshub.local", name: "Performance Team", initials: "PJ" },
   });
+
+  // Admin login credential. Login is by USERNAME (not email). Provide both env
+  // vars to (re)set the admin's username + password — admin-managed, no signup.
+  //   SEED_ADMIN_USERNAME='butas' SEED_ADMIN_PASSWORD='…' npm run db:seed
+  // Applied to the demo user; AUTH_PEPPER is mixed in to match lib/auth/password.ts.
+  const seedUser = process.env.SEED_ADMIN_USERNAME?.trim().toLowerCase();
+  const seedPw = process.env.SEED_ADMIN_PASSWORD;
+  if (seedUser || seedPw) {
+    const pepper = process.env.AUTH_PEPPER ?? "";
+    await prisma.user.update({
+      where: { email: "team@adshub.local" },
+      data: {
+        role: "admin",
+        ...(seedUser ? { username: seedUser } : {}),
+        ...(seedPw ? { passwordHash: await hash(seedPw + pepper) } : {}),
+      },
+    });
+    console.log(
+      `Admin credential set${seedUser ? ` (username: ${seedUser})` : ""}.`,
+    );
+  }
 
   // built-in categories — keyed by unique name
   for (const name of DEFAULT_CATEGORIES) {

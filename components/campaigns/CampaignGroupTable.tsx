@@ -162,7 +162,17 @@ export function CampaignGroupTable({
                     <td key={cell.key} className="border-t border-border-2 px-[11px] py-3 text-right">
                       <span
                         className="num text-[12px] font-semibold"
-                        style={{ color: r.unmapped ? "#3a3f47" : cell.ok ? "#1f8a5b" : "#d6453d" }}
+                        title={cell.enforced ? undefined : "ข้ามเกณฑ์นี้ · skipped (not judged)"}
+                        style={{
+                          color: r.unmapped
+                            ? "#3a3f47"
+                            : !cell.enforced
+                              ? "#aeb3bb"
+                              : cell.ok
+                                ? "#1f8a5b"
+                                : "#d6453d",
+                          textDecoration: cell.enforced ? "none" : "line-through",
+                        }}
                       >
                         {cell.disp}
                       </span>

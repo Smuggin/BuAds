@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { rangeToWindow } from "@/lib/windows";
 import type { BreakdownAccum } from "@/lib/breakdown";
+import { requireAuth } from "@/lib/auth/guard";
 
 /** metaAccountIds that actually have audience breakdown data for the given range —
  *  used to disable no-report accounts in the top-bar filter on the Breakdown page. */
 export async function GET(req: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const url = new URL(req.url);
   const window = rangeToWindow(url.searchParams.get("range"));
 

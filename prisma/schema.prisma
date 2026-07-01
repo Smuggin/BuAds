@@ -14,15 +14,38 @@ datasource db {
 
 // ---------------- Auth & secrets ----------------
 model User {
-  id        String        @id @default(cuid())
-  email     String        @unique
-  name      String
-  initials  String
-  role      String        @default("member")
-  createdAt DateTime      @default(now())
-  logs      ActivityLog[]
-  tokens    MetaToken[]
-  uploads   Attachment[]
+  id               String        @id @default(cuid())
+  username         String?       @unique // login identifier (admin-managed)
+  email            String        @unique
+  name             String
+  initials         String
+  role             String        @default("member")
+  passwordHash     String? // null = no password set yet (pre-seed); set by seed/admin
+  failedLoginCount Int           @default(0) // brute-force counter; reset on success
+  lockedUntil      DateTime? // temporary lockout after too many failures
+  createdAt        DateTime      @default(now())
+  logs             ActivityLog[]
+  tokens           MetaToken[]
+  uploads          Attachment[]
+  sessions         Session[]
+}
+
+// Opaque database-backed sessions. The raw token lives only in the client's
+// httpOnly cookie; we store just its SHA-256 hash so a DB leak yields no usable
+// token, and a single session is revoked by deleting one row.
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique // SHA-256 hex of the opaque cookie token
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) // anchor for the absolute expiry cap
+  expiresAt  DateTime // sliding expiry; bumped on each verified use
+  lastUsedAt DateTime @default(now())
+  userAgent  String?
+  ip         String?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ---------------- Object storage (Supabase Storage) ----------------
@@ -118,6 +141,7 @@ model Product {
   image      Attachment?      @relation(fields: [imageId], references: [id])
   custom     Boolean          @default(false)
   closeMode  CloseMode        @default(SUGGEST) // OFF | SUGGEST (advisory) | AUTO (auto-pause)
+  skipMetrics String[]        @default([]) // MetricKeys excluded from judging (exceptions)
   categoryId String
   category   Category         @relation(fields: [categoryId], references: [id])
   thrRoas    Float

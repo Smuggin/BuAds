@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth/guard";
 
 /**
  * Manually link / unlink a campaign to a product by SKU — the override for when
@@ -10,6 +11,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const { id } = await params;
   const body = (await req.json().catch(() => null)) as { sku?: string | null } | null;
   if (!body || !("sku" in body)) {

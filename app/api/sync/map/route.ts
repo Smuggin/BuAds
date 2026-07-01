@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runSync } from "@/lib/meta/sync";
+import { requireAuth } from "@/lib/auth/guard";
 
 export const maxDuration = 60;
 
@@ -7,6 +8,8 @@ export const maxDuration = 60;
  *  refresh 30d campaign metrics. Skips the heavy creative/breakdown passes so it
  *  stays within serverless time limits. POST (manual) + GET (Vercel cron). */
 export async function POST() {
+  const denied = await requireAuth();
+  if (denied) return denied;
   try {
     const result = await runSync({ mode: "map" });
     return NextResponse.json(result);
@@ -18,5 +21,7 @@ export async function POST() {
 
 /** Vercel cron triggers via GET. */
 export async function GET() {
+  const denied = await requireAuth();
+  if (denied) return denied;
   return POST();
 }

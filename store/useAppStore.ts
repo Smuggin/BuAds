@@ -84,6 +84,7 @@ export interface AppState {
   budgetOverride: Record<string, number>;
   prodThr: Record<string, Partial<Thresholds>>;
   closeOverride: Record<string, CloseMode>;
+  skipOverride: Record<string, MetricKey[]>;
   creativeOpen: Record<string, boolean>;
   ruleOverride: Record<string, boolean>;
 
@@ -132,6 +133,7 @@ export interface AppActions {
   setBudgetOverride: (id: string, value: number) => void;
   setThreshold: (sku: string, key: MetricKey, value: number) => void;
   setCloseMode: (sku: string, mode: CloseMode) => void;
+  setSkipMetrics: (sku: string, keys: MetricKey[]) => void;
   toggleCreativeOpen: (id: string, defaultOn: boolean) => void;
   toggleRule: (id: string, base: boolean) => void;
 
@@ -197,6 +199,7 @@ export const initialAppState: AppState = {
   budgetOverride: {},
   prodThr: {},
   closeOverride: {},
+  skipOverride: {},
   creativeOpen: {},
   ruleOverride: {},
   budgetModal: null,
@@ -258,6 +261,8 @@ export function createAppStore(init: Partial<AppState> = {}) {
       })),
     setCloseMode: (sku, mode) =>
       set((s) => ({ closeOverride: { ...s.closeOverride, [sku]: mode } })),
+    setSkipMetrics: (sku, keys) =>
+      set((s) => ({ skipOverride: { ...s.skipOverride, [sku]: keys } })),
     toggleCreativeOpen: (id, defaultOn) =>
       set((s) => {
         const cur = s.creativeOpen[id] ?? defaultOn;

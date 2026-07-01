@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { rangeToWindow } from "@/lib/windows";
 import type { OverviewAccountRow, SummaryCard } from "@/data/types";
+import { requireAuth } from "@/lib/auth/guard";
 
 const baht = (n: number) => "฿" + Math.round(n).toLocaleString("en-US");
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function GET(req: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const params = new URL(req.url).searchParams;
   const account = params.get("account") ?? "all";
   const window = rangeToWindow(params.get("range"));

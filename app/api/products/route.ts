@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { DEFAULT_THRESHOLDS } from "@/lib/constants";
 import { regroupUnmapped } from "@/lib/meta/regroup";
-import type { AccountKey, CloseMode, Product, Thresholds } from "@/data/types";
+import type { AccountKey, CloseMode, MetricKey, Product, Thresholds } from "@/data/types";
+import { requireAuth } from "@/lib/auth/guard";
 
 // preserve the original demo order (drives ramp colors + product groups)
 const ORDER = ["SRM-01", "SUN-50", "NGT-09", "TEE-22", "BAG-07", "GFT-03"];
 
 export async function GET() {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const rows = await prisma.product.findMany({
     include: {
       category: true,
@@ -29,6 +32,7 @@ export async function GET() {
       unitCost: p.unitCost,
       img: p.image?.url ?? p.imgUrl,
       closeMode: p.closeMode,
+      skipMetrics: (p.skipMetrics ?? []) as MetricKey[],
       custom: p.custom,
       thresholds: {
         roas: p.thrRoas,
@@ -51,11 +55,14 @@ type CreateBody = {
   unitCost: number;
   img?: string | null;
   closeMode?: CloseMode;
+  skipMetrics?: MetricKey[];
   thresholds?: Partial<Thresholds>;
 };
 
 /** Create a new product (+ category if needed, thresholds, account links). */
 export async function POST(req: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const body = (await req.json().catch(() => null)) as CreateBody | null;
   if (!body || !body.th?.trim()) {
     return NextResponse.json({ error: "name (th) required" }, { status: 400 });
@@ -87,6 +94,7 @@ export async function POST(req: Request) {
       imgUrl: body.img ?? null,
       custom: true,
       closeMode: body.closeMode ?? "SUGGEST",
+      skipMetrics: body.skipMetrics ?? [],
       categoryId: category.id,
       thrRoas: thr.roas,
       thrCtr: thr.ctr,

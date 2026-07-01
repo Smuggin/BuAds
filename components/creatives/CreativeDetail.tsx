@@ -3,13 +3,13 @@
 import { accountMetaFor, FORMAT_META } from "@/lib/constants";
 import { fmtK, fmtMoney, round1 } from "@/lib/format";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
-import { effCloseMode, effThresholds } from "@/lib/resolvers";
+import { effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { usePerfColor } from "@/store/AppProvider";
 import { CREATIVE_PROFILES } from "@/data/profiles";
 import { Card } from "@/components/ui/Card";
 import { CreativePlayer } from "@/components/creatives/CreativePlayer";
 import { AudienceBreakdown } from "@/components/charts/AudienceBreakdown";
-import type { Campaign, CloseMode, Creative, Product, Thresholds } from "@/data/types";
+import type { Campaign, CloseMode, Creative, MetricKey, Product, Thresholds } from "@/data/types";
 
 interface Props {
   creative: Creative;
@@ -17,9 +17,10 @@ interface Props {
   campaigns: Campaign[];
   prodThr: Record<string, Partial<Thresholds>>;
   closeOverride: Record<string, CloseMode>;
+  skipOverride: Record<string, MetricKey[]>;
 }
 
-export function CreativeDetail({ creative, products, campaigns, prodThr, closeOverride }: Props) {
+export function CreativeDetail({ creative, products, campaigns, prodThr, closeOverride, skipOverride }: Props) {
   const pc = usePerfColor();
   const fm = FORMAT_META[creative.format];
   const product = products.find((p) => p.sku === creative.sku);
@@ -50,7 +51,7 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, closeOv
     .filter((r): r is { c: Campaign; p: Product } => r !== null)
     .map(({ c, p }) => {
       const thr = effThresholds(p, prodThr);
-      const ev = evalCampaign(c.metrics, thr);
+      const ev = evalCampaign(c.metrics, thr, effSkipMetrics(p, skipOverride));
       const st = resolveCampaignState(ev.verdict, effCloseMode(p, closeOverride) !== "OFF", undefined, c.status === "ACTIVE");
       return { c, acc: accountMetaFor(c.account).th, st };
     });

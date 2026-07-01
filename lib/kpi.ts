@@ -20,6 +20,7 @@ export interface MetricCellResult {
   value: number;
   disp: string;
   ok: boolean;
+  enforced: boolean; // false when the product skips this metric (exception)
 }
 
 export interface EvalResult {
@@ -29,16 +30,23 @@ export interface EvalResult {
   verdict: Verdict;
 }
 
-/** Judge a campaign's measured metrics against a product's thresholds. */
-export function evalCampaign(metrics: Metrics, thresholds: Thresholds): EvalResult {
+/** Judge a campaign's measured metrics against a product's thresholds. `skip`
+ *  lists metrics the product excludes from judging (exceptions) — those never
+ *  count as a breach, though their cells are still returned for display. */
+export function evalCampaign(
+  metrics: Metrics,
+  thresholds: Thresholds,
+  skip: MetricKey[] = [],
+): EvalResult {
   const cells = METRIC_DEFS.map((m): MetricCellResult => {
     const value = metrics[m.key];
     const ok = m.dir === "min" ? value >= thresholds[m.key] : value <= thresholds[m.key];
-    return { key: m.key, value, disp: fmtMetric(m.key, value), ok };
+    return { key: m.key, value, disp: fmtMetric(m.key, value), ok, enforced: !skip.includes(m.key) };
   });
-  const breaches = cells.filter((c) => !c.ok).length;
+  const breaches = cells.filter((c) => c.enforced && !c.ok).length;
   const passAll = breaches === 0;
-  const marked = passAll && metrics.roas >= thresholds.roas * MARKED_ROAS_MULTIPLIER;
+  const marked =
+    passAll && !skip.includes("roas") && metrics.roas >= thresholds.roas * MARKED_ROAS_MULTIPLIER;
   const verdict: Verdict = marked ? "marked" : passAll ? "running" : "breach";
   return { cells, breaches, passAll, verdict };
 }

@@ -7,6 +7,7 @@
 import { AGE_LABELS, GENDER_LABELS, GENDER_COLORS, DAY_LABELS } from "@/data/profiles";
 import { prettyRegion } from "@/lib/meta/map";
 import type { AgeRow, GenderRow, ProvinceRow } from "@/data/overview";
+import type { AudienceProfile } from "@/data/types";
 
 /** Raw sums for one segment (audience bucket). */
 export interface Seg {
@@ -99,4 +100,43 @@ export function shapeBreakdown(accums: BreakdownAccum[]): BreakdownData {
   const grid = cells.map((row) => row.map((c) => (cellMax ? Math.round((c / cellMax) * 100) : 0)));
 
   return { age: ageRows, gender: genderRows, province: provinceRows, heat: { days: DAY_LABELS, grid } };
+}
+
+/**
+ * Spend-weighted blend of many per-creative AudienceProfiles into one (for a
+ * selected product). age/gender/day/hour are weighted-averaged; province is
+ * merged by region label and the top 8 kept. null when nothing has audience.
+ */
+export function aggregateAudienceProfiles(
+  items: { audience: AudienceProfile | null; spend: number }[],
+): AudienceProfile | null {
+  const valid = items.filter((i) => i.audience);
+  if (!valid.length) return null;
+
+  const age = zeros(6), gender = zeros(3), day = zeros(7), hour = zeros(12);
+  const region = new Map<string, number>();
+  let totalW = 0;
+  for (const { audience, spend } of valid) {
+    const a = audience!;
+    const w = spend > 0 ? spend : 1;
+    totalW += w;
+    a.age?.forEach((v, i) => (age[i] += (v || 0) * w));
+    a.gender?.forEach((v, i) => (gender[i] += (v || 0) * w));
+    a.day?.forEach((v, i) => (day[i] += (v || 0) * w));
+    a.hour?.forEach((v, i) => (hour[i] += (v || 0) * w));
+    a.province?.forEach((v, i) => {
+      const label = a.provinceLabels?.[i] ?? `#${i}`;
+      region.set(label, (region.get(label) ?? 0) + (v || 0) * w);
+    });
+  }
+  const avg = (arr: number[]) => arr.map((v) => Math.round((v / totalW) * 10) / 10);
+  const top = [...region.entries()].sort((x, y) => y[1] - x[1]).slice(0, 8);
+  return {
+    age: avg(age),
+    gender: avg(gender),
+    day: avg(day),
+    hour: avg(hour),
+    province: top.map(([, v]) => Math.round((v / totalW) * 10) / 10),
+    provinceLabels: top.map(([l]) => l),
+  };
 }

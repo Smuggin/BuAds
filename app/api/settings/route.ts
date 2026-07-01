@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { AvailableAccount, ConnectionAccount, ConnStatus } from "@/data/types";
+import { requireAuth } from "@/lib/auth/guard";
 
 function relTime(d: Date | null): string {
   if (!d) return "ยังไม่ซิงค์";
@@ -17,6 +18,8 @@ const STATUS: Record<string, ConnStatus> = {
 };
 
 export async function GET() {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const accounts = await prisma.adAccount.findMany({
     include: {
       _count: { select: { products: true } },

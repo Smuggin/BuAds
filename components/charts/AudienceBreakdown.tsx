@@ -11,6 +11,7 @@ import {
   PROVINCE_LABELS,
 } from "@/data/profiles";
 import type { AudienceProfile } from "@/data/types";
+import { HeatFooter, heatCellTitle } from "./HeatFooter";
 
 export function AudienceBreakdown({ profile }: { profile: AudienceProfile }) {
   // Real synced profiles bring their own region labels (top regions vary); the
@@ -115,6 +116,7 @@ export function AudienceBreakdown({ profile }: { profile: AudienceProfile }) {
                   {row.map((v, j) => (
                     <div
                       key={j}
+                      title={heatCellTitle(i, j)}
                       className="h-5 flex-1 rounded-[3px]"
                       style={{ background: `rgb(var(--accent-rgb) / ${(0.05 + (v / heatDiv) * 0.92).toFixed(3)})` }}
                     />
@@ -122,13 +124,7 @@ export function AudienceBreakdown({ profile }: { profile: AudienceProfile }) {
                 </div>
               </div>
             ))}
-            <div className="mt-[2px] flex items-center gap-[6px] text-[9.5px] text-faint">
-              <span className="w-[18px]" />
-              <span>น้อย</span>
-              <div className="flex flex-1 justify-end">
-                <span>มาก</span>
-              </div>
-            </div>
+            <HeatFooter />
           </div>
         </div>
       </div>
