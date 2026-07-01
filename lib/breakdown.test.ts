@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shapeBreakdown, emptyBreakdownAccum, type BreakdownAccum } from "./breakdown";
+import { shapeBreakdown, emptyBreakdownAccum, aggregateAudienceProfiles, type BreakdownAccum } from "./breakdown";
 
 const seg = (impr: number, spend: number, rev: number) => ({ impr, spend, rev });
 
@@ -53,5 +53,26 @@ describe("shapeBreakdown", () => {
     expect(bd.heat.grid[0][6]).toBe(100); // the single hot cell
     expect(Math.max(...bd.heat.grid.flat())).toBe(100);
     expect(Math.min(...bd.heat.grid.flat())).toBe(0);
+  });
+});
+
+describe("aggregateAudienceProfiles", () => {
+  const prof = (over: Partial<Parameters<typeof aggregateAudienceProfiles>[0][0]["audience"]>) => ({
+    age: [0, 0, 0, 0, 0, 0], gender: [0, 0, 0], province: [], day: [0, 0, 0, 0, 0, 0, 0], hour: Array(12).fill(0), ...over,
+  });
+
+  it("returns null when nothing has audience", () => {
+    expect(aggregateAudienceProfiles([{ audience: null, spend: 10 }])).toBeNull();
+  });
+
+  it("spend-weights the blend and merges province labels (top 8)", () => {
+    const A = prof({ age: [100, 0, 0, 0, 0, 0], gender: [100, 0, 0], province: [100], provinceLabels: ["BKK"], day: [100, 0, 0, 0, 0, 0, 0] });
+    const B = prof({ age: [0, 0, 0, 0, 0, 100], gender: [0, 100, 0], province: [100], provinceLabels: ["CNX"], day: [0, 0, 0, 0, 0, 0, 100] });
+    const r = aggregateAudienceProfiles([{ audience: A, spend: 30 }, { audience: B, spend: 10 }])!;
+    expect(r.gender[0]).toBe(75); // 30/40 weighting
+    expect(r.gender[1]).toBe(25);
+    expect(r.age[0]).toBeGreaterThan(r.age[5]); // A dominates
+    expect(r.provinceLabels).toEqual(["BKK", "CNX"]); // BKK higher weight first
+    expect(r.province[0]).toBeGreaterThan(r.province[1]);
   });
 });

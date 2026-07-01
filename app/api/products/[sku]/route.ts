@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { regroupUnmapped } from "@/lib/meta/regroup";
 import type { AccountKey, CloseMode, MetricKey } from "@/data/types";
+import { requireAuth } from "@/lib/auth/guard";
 
 const THR_COLUMN: Record<MetricKey, string> = {
   roas: "thrRoas",
@@ -17,6 +18,7 @@ const THR_COLUMN: Record<MetricKey, string> = {
 type PatchBody = {
   thresholds?: Partial<Record<MetricKey, number>>;
   closeMode?: CloseMode;
+  skipMetrics?: MetricKey[];
   th?: string;
   category?: string;
   unitCost?: number;
@@ -30,6 +32,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ sku: string }> },
 ) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const { sku } = await params;
   const body = (await req.json().catch(() => null)) as PatchBody | null;
   if (!body) return NextResponse.json({ error: "invalid body" }, { status: 400 });
@@ -50,6 +54,12 @@ export async function PATCH(
     data.closeMode = body.closeMode;
     const L: Record<CloseMode, string> = { OFF: "ปิด", SUGGEST: "แนะนำ", AUTO: "อัตโนมัติ" };
     details.push(`โหมดปิด → ${L[body.closeMode]}`);
+  }
+  if (Array.isArray(body.skipMetrics)) {
+    const KEYS: MetricKey[] = ["roas", "ctr", "cpa", "cpm", "cpp", "cpr", "cost"];
+    const valid = body.skipMetrics.filter((k) => KEYS.includes(k));
+    data.skipMetrics = valid;
+    details.push(`ข้ามเกณฑ์ → ${valid.length ? valid.join(", ") : "ไม่มี"}`);
   }
   if (typeof body.th === "string" && body.th.trim()) {
     data.thName = body.th.trim();
@@ -126,6 +136,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ sku: string }> },
 ) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const { sku } = await params;
   const product = await prisma.product.findUnique({ where: { sku } });
   if (!product) return NextResponse.json({ error: "not found" }, { status: 404 });

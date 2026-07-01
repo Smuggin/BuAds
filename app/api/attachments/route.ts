@@ -7,6 +7,7 @@ import {
   storageConfigured,
 } from "@/lib/storage";
 import type { AttachmentKind } from "@prisma/client";
+import { requireAuth } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,8 @@ const KINDS: AttachmentKind[] = ["PRODUCT_IMAGE", "CREATIVE", "OTHER"];
  * Returns { id, url }.
  */
 export async function POST(req: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   if (!storageConfigured()) {
     return NextResponse.json(
       { error: "storage not configured — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY" },

@@ -21,6 +21,7 @@ export function CreativesView() {
   const selectedCreative = useAppStore((s) => s.selectedCreative);
   const prodThr = useAppStore((s) => s.prodThr);
   const closeOverride = useAppStore((s) => s.closeOverride);
+  const skipOverride = useAppStore((s) => s.skipOverride);
   const selectCreative = useAppStore((s) => s.selectCreative);
   const setMediaProd = useAppStore((s) => s.setMediaProd);
   const pc = usePerfColor();
@@ -132,6 +133,7 @@ export function CreativesView() {
           campaigns={campaigns}
           prodThr={prodThr}
           closeOverride={closeOverride}
+          skipOverride={skipOverride}
         />
       ) : (
         <Card className="flex h-[400px] items-center justify-center p-5 text-center text-[12.5px] text-muted-2">

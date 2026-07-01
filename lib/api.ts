@@ -4,6 +4,7 @@
  * only app/api/*'s bodies change, these signatures stay identical.
  */
 import type {
+  AudienceProfile,
   AvailableAccount,
   Campaign,
   Category,
@@ -11,6 +12,7 @@ import type {
   ConnectionAccount,
   Creative,
   LogEntry,
+  MetricKey,
   Notification,
   OverviewAccountRow,
   Product,
@@ -79,6 +81,7 @@ export async function patchProduct(
   body: {
     thresholds?: Record<string, number>;
     closeMode?: CloseMode;
+    skipMetrics?: MetricKey[];
     th?: string;
     category?: string;
     unitCost?: number;
@@ -160,6 +163,26 @@ export const getBreakdown = (range: string, account: string) =>
 export const getBreakdownAccounts = (range: string) =>
   getJSON<string[]>(`/api/breakdown/accounts?range=${range}`);
 export const getProducts = () => getJSON<Product[]>("/api/products");
+
+export interface ProductInAccount {
+  sku: string;
+  name: string;
+  category: string;
+  closeMode: string;
+  campaigns: number;
+  spend: number;
+  roas: number;
+}
+/** Products present in an ad account (campaign-derived), with spend/ROAS for the range. */
+export const getProductsInAccount = (account: string, range: string) =>
+  getJSON<ProductInAccount[]>(
+    `/api/products/in-account?account=${encodeURIComponent(account)}&range=${range}`,
+  );
+/** Aggregated audience profile for one product's creatives (null if no audience). */
+export const getProductBreakdown = (sku: string, account: string, range: string) =>
+  getJSON<AudienceProfile | null>(
+    `/api/breakdown/product?sku=${encodeURIComponent(sku)}&account=${encodeURIComponent(account)}&range=${range}`,
+  );
 export const getCampaigns = (range = "30d") => getJSON<Campaign[]>(`/api/campaigns?range=${range}`);
 export const getCreatives = (range = "30d") => getJSON<Creative[]>(`/api/creatives?range=${range}`);
 export const getRules = () => getJSON<Rule[]>("/api/rules");

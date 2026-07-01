@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { accountMetaFor } from "@/lib/constants";
 import { evalCampaign } from "@/lib/kpi";
+import type { MetricKey } from "@/data/types";
 import { graphGet, graphGetAll } from "./client";
 import { getActiveToken } from "./auth";
 import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
@@ -108,7 +109,7 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
 
       const products = await prisma.product.findMany({
         select: {
-          id: true, sku: true, thName: true, closeMode: true,
+          id: true, sku: true, thName: true, closeMode: true, skipMetrics: true,
           thrRoas: true, thrCtr: true, thrCpa: true, thrCpm: true, thrCpp: true, thrCpr: true, thrCost: true,
         },
       });
@@ -199,6 +200,7 @@ export async function runSync(opts: { mode?: "full" | "map" } = {}): Promise<Syn
           const verdict = evalCampaign(
             { roas: m.roas, ctr: m.ctr, cpa: m.cpa, cpm: m.cpm, cpp: m.cpp, cpr: m.cpr, cost: m.spend / INSIGHT_WINDOW_DAYS },
             { roas: product.thrRoas, ctr: product.thrCtr, cpa: product.thrCpa, cpm: product.thrCpm, cpp: product.thrCpp, cpr: product.thrCpr, cost: product.thrCost },
+            product.skipMetrics as MetricKey[],
           ).verdict;
           if (verdict === "breach") {
             try {

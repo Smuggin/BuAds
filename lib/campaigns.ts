@@ -13,7 +13,7 @@ import type {
 } from "@/data/types";
 import { accountMetaFor, METRIC_DEFS, RAMP } from "./constants";
 import { fmtMetric } from "./format";
-import { effBudget, effCloseMode, effThresholds } from "./resolvers";
+import { effBudget, effCloseMode, effSkipMetrics, effThresholds } from "./resolvers";
 import { evalCampaign, resolveCampaignState, type CampaignState, type EvalResult } from "./kpi";
 
 export type GroupBy = "product" | "account" | "none";
@@ -62,6 +62,7 @@ export interface BuildParams {
   campDir: SortDir;
   prodThr: Record<string, Partial<Thresholds>>;
   closeOverride: Record<string, CloseMode>;
+  skipOverride: Record<string, MetricKey[]>;
   budgetOverride: Record<string, number>;
   campOverride: Record<string, boolean>;
 }
@@ -79,6 +80,7 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
       value: c.metrics[m.key],
       disp: fmtMetric(m.key, c.metrics[m.key]),
       ok: true,
+      enforced: true,
     }));
     const metaActive = c.status === "ACTIVE";
     const on = params.campOverride[c.id] ?? metaActive;
@@ -106,7 +108,7 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
   }
   const thresholds = effThresholds(p, params.prodThr);
   const advise = effCloseMode(p, params.closeOverride) !== "OFF";
-  const evalResult = evalCampaign(c.metrics, thresholds);
+  const evalResult = evalCampaign(c.metrics, thresholds, effSkipMetrics(p, params.skipOverride));
   const state = resolveCampaignState(
     evalResult.verdict,
     advise,

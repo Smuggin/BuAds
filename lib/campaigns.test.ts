@@ -14,6 +14,7 @@ const base = (over: Partial<BuildParams> = {}): BuildParams => ({
   campDir: "desc",
   prodThr: {},
   closeOverride: {},
+  skipOverride: {},
   budgetOverride: {},
   campOverride: {},
   ...over,

@@ -34,6 +34,14 @@ export function effCloseMode(
   return closeOverride[product.sku] ?? product.closeMode;
 }
 
+/** Effective skipped metrics = session override, else the product's stored set. */
+export function effSkipMetrics(
+  product: Product,
+  skipOverride: Record<string, MetricKey[]> = {},
+): MetricKey[] {
+  return skipOverride[product.sku] ?? product.skipMetrics ?? [];
+}
+
 export function effBudget(
   campaign: Campaign,
   budgetOverride: Record<string, number> = {},

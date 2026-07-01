@@ -9,6 +9,7 @@ import type {
   CreativeVideo,
   ProfileKey,
 } from "@/data/types";
+import { requireAuth } from "@/lib/auth/guard";
 
 const FMT: Record<string, CreativeFormat> = {
   VIDEO: "Video",
@@ -18,6 +19,8 @@ const FMT: Record<string, CreativeFormat> = {
 };
 
 export async function GET(req: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const window = rangeToWindow(new URL(req.url).searchParams.get("range"));
   const rows = await prisma.creative.findMany({
     include: {

@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { rangeToWindow } from "@/lib/windows";
 import { shapeBreakdown, type BreakdownAccum } from "@/lib/breakdown";
+import { requireAuth } from "@/lib/auth/guard";
 
 /** Account-wide audience breakdown for the Breakdown page. Filters:
  *  ?range=7d|30d|90d (default 30d), ?account=act_…|all (default all). */
 export async function GET(req: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const url = new URL(req.url);
   const window = rangeToWindow(url.searchParams.get("range"));
   const account = url.searchParams.get("account") ?? "all";

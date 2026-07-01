@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { LogActor, LogEntry, LogType } from "@/data/types";
+import { requireAuth } from "@/lib/auth/guard";
 
 const TYPE: Record<string, LogType> = {
   BUDGET_UP: "budget_up", BUDGET_DOWN: "budget_down", PAUSE: "pause",
@@ -17,6 +18,8 @@ function dayBucket(d: Date): string {
 }
 
 export async function GET() {
+  const denied = await requireAuth();
+  if (denied) return denied;
   const rows = await prisma.activityLog.findMany({ orderBy: { occurredAt: "desc" }, take: 100 });
   const logs: LogEntry[] = rows.map((r) => ({
     id: r.id,

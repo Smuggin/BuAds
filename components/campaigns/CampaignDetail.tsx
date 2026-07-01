@@ -1,7 +1,7 @@
 "use client";
 
 import { FORMAT_META, METRIC_DEFS } from "@/lib/constants";
-import { dirSymbol, fmtK, fmtMetric, fmtMoney } from "@/lib/format";
+import { dirSymbol, fmtMetric, fmtMoney } from "@/lib/format";
 import { usePerfColor } from "@/store/AppProvider";
 import { aggregateProfile, evalCampaign, rankCreatives, type CampaignState, type CreativeVerdict } from "@/lib/kpi";
 import { accountMetaFor } from "@/lib/constants";
@@ -9,7 +9,7 @@ import { CREATIVE_PROFILES } from "@/data/profiles";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
 import { AudienceBreakdown } from "@/components/charts/AudienceBreakdown";
-import type { Campaign, Creative, Product, Thresholds } from "@/data/types";
+import type { Campaign, Creative, MetricKey, Product, Thresholds } from "@/data/types";
 
 const VERDICT_META: Record<CreativeVerdict, { label: string; color: string }> = {
   marked: { label: "ดีเด่น · พร้อม Scale", color: "#1f8a5b" },
@@ -21,6 +21,7 @@ interface Props {
   campaign: Campaign;
   product: Product;
   thresholds: Thresholds;
+  skip: MetricKey[];
   state: CampaignState;
   creatives: Creative[];
   creativeOpen: Record<string, boolean>;
@@ -33,6 +34,7 @@ export function CampaignDetail({
   campaign,
   product,
   thresholds,
+  skip,
   state,
   creatives,
   creativeOpen,
@@ -42,7 +44,7 @@ export function CampaignDetail({
 }: Props) {
   const pc = usePerfColor();
   const acc = accountMetaFor(campaign.account);
-  const ev = evalCampaign(campaign.metrics, thresholds);
+  const ev = evalCampaign(campaign.metrics, thresholds, skip);
   const campCreatives = creatives.filter((c) => c.campaigns.includes(campaign.id));
   const { ranked, openCount } = rankCreatives(campCreatives, thresholds, creativeOpen);
   const profile = aggregateProfile(
@@ -96,11 +98,19 @@ export function CampaignDetail({
           {METRIC_DEFS.map((m, i) => {
             const cell = ev.cells[i];
             return (
-              <div key={m.key} className="bg-card px-3 py-[11px]">
+              <div
+                key={m.key}
+                className="bg-card px-3 py-[11px]"
+                title={cell.enforced ? undefined : "ข้ามเกณฑ์นี้ · skipped (not judged)"}
+                style={{ opacity: cell.enforced ? 1 : 0.45 }}
+              >
                 <div className="text-[10px] uppercase tracking-[0.03em] text-muted-2">{m.short}</div>
                 <div
                   className="num text-[17px] font-semibold"
-                  style={{ color: cell.ok ? "#1f8a5b" : "#d6453d" }}
+                  style={{
+                    color: !cell.enforced ? "#6b7280" : cell.ok ? "#1f8a5b" : "#d6453d",
+                    textDecoration: cell.enforced ? "none" : "line-through",
+                  }}
                 >
                   {cell.disp}
                 </div>

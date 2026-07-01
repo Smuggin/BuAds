@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getProducts, patchProduct } from "@/lib/api";
 import { METRIC_DEFS, RAMP } from "@/lib/constants";
-import { effCloseMode, effThresholds } from "@/lib/resolvers";
+import { effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { dirSymbol } from "@/lib/format";
 import { useAppStore } from "@/store/AppProvider";
 import { Banner } from "@/components/ui/Banner";
@@ -21,8 +21,17 @@ export function ProductKpiView() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const prodThr = useAppStore((s) => s.prodThr);
   const closeOverride = useAppStore((s) => s.closeOverride);
+  const skipOverride = useAppStore((s) => s.skipOverride);
   const setThreshold = useAppStore((s) => s.setThreshold);
   const setCloseMode = useAppStore((s) => s.setCloseMode);
+  const setSkipMetrics = useAppStore((s) => s.setSkipMetrics);
+
+  // toggle whether a metric is enforced for a product (unchecked = skipped exception)
+  const toggleMetric = (sku: string, key: MetricKey, current: MetricKey[], enforce: boolean) => {
+    const next = enforce ? current.filter((k) => k !== key) : [...current, key];
+    setSkipMetrics(sku, next);
+    patchProduct(sku, { skipMetrics: next }).catch(() => {});
+  };
 
   useEffect(() => {
     let alive = true;
@@ -50,12 +59,12 @@ export function ProductKpiView() {
         <div className="border-b border-border-2 px-5 py-4">
           <div className="text-section-title">เกณฑ์ตัดสินรายสินค้า · KPI thresholds</div>
           <div className="text-[12px] text-muted">
-            ROAS / CTR เป็นค่าต่ำสุด (≥) · ส่วนต้นทุนเป็นค่าสูงสุด (≤)
+            ROAS / CTR เป็นค่าต่ำสุด (≥) · ส่วนต้นทุนเป็นค่าสูงสุด (≤) · ติ๊กถูก = ใช้เกณฑ์, เอาออก = ข้าม (ยกเว้น)
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1060px] border-collapse text-[13px]">
+          <table className="w-full min-w-[1220px] border-collapse text-[13px]">
             <thead>
               <tr className="bg-field-bg text-[10.5px] uppercase tracking-[0.02em] text-muted">
                 <th className="px-5 py-[10px] text-left font-semibold">สินค้า · Product</th>
@@ -72,6 +81,7 @@ export function ProductKpiView() {
               {products?.map((p, pi) => {
                 const thr = effThresholds(p, prodThr);
                 const mode = effCloseMode(p, closeOverride);
+                const skip = effSkipMetrics(p, skipOverride);
                 return (
                   <tr key={p.sku} className="border-t border-border-2">
                     <td className="px-5 py-3">
@@ -88,19 +98,34 @@ export function ProductKpiView() {
                         </div>
                       </div>
                     </td>
-                    {METRIC_DEFS.map((m) => (
-                      <td key={m.key} className="px-[10px] py-3 text-right">
-                        <ThresholdInput
-                          money={m.money}
-                          suffix={m.suffix}
-                          value={thr[m.key as MetricKey]}
-                          onChange={(v) => {
-                            setThreshold(p.sku, m.key as MetricKey, v); // optimistic (live re-judge)
-                            patchProduct(p.sku, { thresholds: { [m.key]: v } }).catch(() => {}); // persist
-                          }}
-                        />
-                      </td>
-                    ))}
+                    {METRIC_DEFS.map((m) => {
+                      const enforced = !skip.includes(m.key as MetricKey);
+                      return (
+                        <td key={m.key} className="px-[10px] py-3">
+                          <div className="flex items-center justify-end gap-[7px]">
+                            <input
+                              type="checkbox"
+                              checked={enforced}
+                              aria-label={`ใช้เกณฑ์ ${m.short} กับ ${p.th}`}
+                              title={enforced ? "ใช้เกณฑ์นี้ · enforced" : "ข้ามเกณฑ์นี้ · skipped (exception)"}
+                              onChange={(e) => toggleMetric(p.sku, m.key as MetricKey, skip, e.target.checked)}
+                              className="h-[13px] w-[13px] flex-shrink-0 cursor-pointer accent-accent"
+                            />
+                            <span className="transition-opacity" style={{ opacity: enforced ? 1 : 0.35 }}>
+                              <ThresholdInput
+                                money={m.money}
+                                suffix={m.suffix}
+                                value={thr[m.key as MetricKey]}
+                                onChange={(v) => {
+                                  setThreshold(p.sku, m.key as MetricKey, v); // optimistic (live re-judge)
+                                  patchProduct(p.sku, { thresholds: { [m.key]: v } }).catch(() => {}); // persist
+                                }}
+                              />
+                            </span>
+                          </div>
+                        </td>
+                      );
+                    })}
                     <td className="px-4 py-3">
                       <div className="flex justify-center">
                         <select

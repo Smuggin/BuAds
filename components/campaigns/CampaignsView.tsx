@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { assignCampaignProduct, getCampaigns, getCreatives, getLogs, getProducts, runStatusSync } from "@/lib/api";
 import { accountMetaFor, firstSortDir } from "@/lib/constants";
 import { buildCampaignGroups, shouldCloseGroup, type CampSortKey } from "@/lib/campaigns";
-import { effBudget, effCloseMode, effThresholds } from "@/lib/resolvers";
+import { effBudget, effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { useAppStore } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
@@ -41,6 +41,7 @@ export function CampaignsView() {
   const campDir = useAppStore((s) => s.campDir);
   const prodThr = useAppStore((s) => s.prodThr);
   const closeOverride = useAppStore((s) => s.closeOverride);
+  const skipOverride = useAppStore((s) => s.skipOverride);
   const budgetOverride = useAppStore((s) => s.budgetOverride);
   const campOverride = useAppStore((s) => s.campOverride);
   const campDetail = useAppStore((s) => s.campDetail);
@@ -125,7 +126,7 @@ export function CampaignsView() {
   const resolveState = (c: Campaign) => {
     const p = productBySku(c.sku);
     const thr = effThresholds(p, prodThr);
-    const ev = evalCampaign(c.metrics, thr);
+    const ev = evalCampaign(c.metrics, thr, effSkipMetrics(p, skipOverride));
     return resolveCampaignState(ev.verdict, effCloseMode(p, closeOverride) !== "OFF", campOverride[c.id], c.status === "ACTIVE");
   };
 
@@ -143,6 +144,7 @@ export function CampaignsView() {
     campDir,
     prodThr,
     closeOverride,
+    skipOverride,
     budgetOverride,
     campOverride,
   });
@@ -227,6 +229,7 @@ export function CampaignsView() {
           campaign={c}
           product={p}
           thresholds={effThresholds(p, prodThr)}
+          skip={effSkipMetrics(p, skipOverride)}
           state={resolveState(c)}
           creatives={creatives}
           creativeOpen={creativeOpen}

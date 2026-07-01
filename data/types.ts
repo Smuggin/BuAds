@@ -43,6 +43,7 @@ export interface Product {
   img: string | null;
   thresholds: Thresholds;
   closeMode: CloseMode;
+  skipMetrics: MetricKey[]; // metrics excluded from judging (empty = all enforced)
   custom?: boolean;
 }
 

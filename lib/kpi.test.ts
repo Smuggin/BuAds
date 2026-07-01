@@ -50,6 +50,33 @@ describe("evalCampaign — verdicts", () => {
   });
 });
 
+describe("evalCampaign — skip metrics (per-product exceptions)", () => {
+  const thr: Thresholds = { roas: 4, ctr: 1, cpa: 100, cpm: 100, cpp: 100, cpr: 100, cost: 1000 };
+
+  it("a breach only on a skipped metric no longer counts (and may even mark)", () => {
+    const metrics: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 10, cpp: 10, cpr: 10, cost: 9999 };
+    expect(evalCampaign(metrics, thr).verdict).toBe("breach"); // cost fails
+    const r = evalCampaign(metrics, thr, ["cost"]);
+    expect(r.breaches).toBe(0);
+    expect(r.verdict).toBe("marked"); // rest pass + roas 10 ≥ 4×1.2
+    expect(r.cells.find((c) => c.key === "cost")!.enforced).toBe(false);
+    expect(r.cells.find((c) => c.key === "roas")!.enforced).toBe(true);
+  });
+
+  it("an enforced metric still breaches even when another is skipped", () => {
+    const m: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 9999, cpp: 10, cpr: 10, cost: 100 };
+    const r = evalCampaign(m, thr, ["cost"]); // cpm still enforced and fails
+    expect(r.breaches).toBe(1);
+    expect(r.verdict).toBe("breach");
+  });
+
+  it("skipping ROAS prevents auto-marking (stays running)", () => {
+    const pass: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 10, cpp: 10, cpr: 10, cost: 10 };
+    expect(evalCampaign(pass, thr).verdict).toBe("marked");
+    expect(evalCampaign(pass, thr, ["roas"]).verdict).toBe("running");
+  });
+});
+
 describe("resolveCampaignState — on/off mirrors Meta, KPI is advisory", () => {
   it("active in Meta → ON even when breaching; flagged ควรปิด", () => {
     const s = resolveCampaignState("breach", true, undefined, true);
