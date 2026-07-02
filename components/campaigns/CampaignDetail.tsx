@@ -196,9 +196,9 @@ export function CampaignDetail({
                   </div>
                   <div className="num mt-[5px] flex flex-wrap items-center gap-[14px] text-[11.5px] text-muted">
                     <span style={{ color: pc(r.creative.roas) }}>
-                      ROAS {Math.round(r.creative.roas * 10) / 10}
+                      ROAS {r.creative.roas.toFixed(2)}
                     </span>
-                    <span>CTR {Math.round(r.creative.ctr * 10) / 10}%</span>
+                    <span>CTR {r.creative.ctr.toFixed(2)}%</span>
                     <span>CPA {fmtMoney(r.creative.cpa)}</span>
                     <span>Spend {fmtMoney(r.creative.spend)}</span>
                     <span>Purch {r.creative.purchases}</span>

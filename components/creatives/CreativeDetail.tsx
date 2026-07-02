@@ -1,7 +1,7 @@
 "use client";
 
 import { accountMetaFor, FORMAT_META } from "@/lib/constants";
-import { fmtK, fmtMoney, round1 } from "@/lib/format";
+import { fmtK, fmtMetric, fmtMoney, round1 } from "@/lib/format";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { effCloseMode, effScaleThresholds, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { usePerfColor } from "@/store/AppProvider";
@@ -41,8 +41,8 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, prodSca
 
   const tiles = [
     { l: "Spend", v: fmtMoney(creative.spend) },
-    { l: "ROAS", v: round1(creative.roas) + "x", color: pc(creative.roas) },
-    { l: "CTR", v: round1(creative.ctr) + "%" },
+    { l: "ROAS", v: fmtMetric("roas", creative.roas), color: pc(creative.roas) },
+    { l: "CTR", v: fmtMetric("ctr", creative.ctr) },
     { l: "Purchases", v: String(creative.purchases) },
     { l: "CPA", v: fmtMoney(creative.cpa) },
     { l: "Impr.", v: fmtK(creative.impressions) },
@@ -232,9 +232,9 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, prodSca
                     </div>
                   </td>
                   <td className="num px-3 py-[11px] text-right font-semibold" style={{ color: pc(c.metrics.roas) }}>
-                    {round1(c.metrics.roas)}x
+                    {fmtMetric("roas", c.metrics.roas)}
                   </td>
-                  <td className="num px-3 py-[11px] text-right text-ink-2">{round1(c.metrics.ctr)}%</td>
+                  <td className="num px-3 py-[11px] text-right text-ink-2">{fmtMetric("ctr", c.metrics.ctr)}</td>
                   <td className="num px-3 py-[11px] text-right text-ink-2">{fmtMoney(c.metrics.cpa)}</td>
                   <td className="num px-3 py-[11px] text-right text-ink-2">{fmtMoney(c.metrics.cost)}</td>
                   <td className="px-4 py-[11px]">

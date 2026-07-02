@@ -17,10 +17,12 @@ import { getActiveToken } from "./auth";
 import { graphGet, graphGetAll } from "./client";
 import { gatherAccounts, INSIGHT_FIELDS } from "./sync";
 import { AD_INSIGHT_FIELDS } from "./syncCreatives";
-import { aggregateInsights, hourIndex24, insightMetrics, type MetaInsightRow } from "./map";
+import { aggregateInsights, hourIndex24, insightMetrics, pickRoas, type MetaInsightRow } from "./map";
+import { fetchAdSetDailyBudgets, effectiveDailyBudget } from "./budget";
 import { timeParams, type TimeSpec } from "@/lib/windows";
 
 type CampRow = MetaInsightRow & { campaign_id?: string };
+type CampMeta = { id: string; daily_budget?: string };
 type AdLite = { id?: string; creative?: { id?: string } };
 
 export interface RangeSyncResult {
@@ -60,7 +62,7 @@ async function fetchDailySpend(
   for (const r of rows) {
     if (!r.date_start) continue;
     const spend = r.spend ? parseFloat(r.spend) : 0;
-    const roas = r.purchase_roas?.length ? parseFloat(r.purchase_roas[0].value) : 0;
+    const roas = pickRoas(r.purchase_roas);
     daily[r.date_start] = (daily[r.date_start] ?? 0) + spend;
     dailyRev[r.date_start] = (dailyRev[r.date_start] ?? 0) + spend * roas;
   }
@@ -96,7 +98,7 @@ async function fetchHourly(
     const h = hourIndex24(r.hourly_stats_aggregated_by_advertiser_time_zone ?? "");
     if (h < 0) continue;
     const spend = r.spend ? parseFloat(r.spend) : 0;
-    const roas = r.purchase_roas?.length ? parseFloat(r.purchase_roas[0].value) : 0;
+    const roas = pickRoas(r.purchase_roas);
     hourlySpend[h] += spend;
     hourlyRev[h] += spend * roas;
   }
@@ -124,9 +126,11 @@ export async function syncRange(
     (await prisma.adAccount.findMany()).map((a) => [a.metaAccountId, a]),
   );
   const campByMetaId = new Map(
-    (await prisma.campaign.findMany({ select: { id: true, metaCampaignId: true, adAccountId: true } })).map(
-      (c) => [c.metaCampaignId, c],
-    ),
+    (
+      await prisma.campaign.findMany({
+        select: { id: true, metaCampaignId: true, adAccountId: true, dailyBudgetMinor: true },
+      })
+    ).map((c) => [c.metaCampaignId, c]),
   );
   const creativeByMetaId = new Map(
     (await prisma.creative.findMany({ select: { id: true, metaCreativeId: true } })).map(
@@ -148,25 +152,33 @@ export async function syncRange(
         // ad-level pass (ad→creative map + ad insights) that powers per-creative
         // metrics, and — for "today" only — an hourly spend/revenue series.
         const isToday = spec.key === "today";
-        const [insights, { daily, dailyRev }, ads, adIns, hourly] = await Promise.all([
-          graphGet<{ data: CampRow[] }>(
-            `/${actId}/insights`,
-            { level: "campaign", fields: INSIGHT_FIELDS, limit: 500, ...timeParams(spec) },
-            token,
-          ),
-          fetchDailySpend(actId, token, spec).catch(() => ({ daily: {}, dailyRev: {} })),
-          graphGetAll<AdLite>(`/${actId}/ads`, { fields: AD_CREATIVE_FIELDS, limit: 500 }, token).catch(
-            () => [] as AdLite[],
-          ),
-          graphGetAll<MetaInsightRow>(
-            `/${actId}/insights`,
-            { level: "ad", fields: AD_INSIGHT_FIELDS, limit: 500, ...timeParams(spec) },
-            token,
-          ).catch(() => [] as MetaInsightRow[]),
-          isToday
-            ? fetchHourly(actId, token, spec).catch(() => ({ hourlySpend: [], hourlyRev: [] }))
-            : Promise.resolve({ hourlySpend: [] as number[], hourlyRev: [] as number[] }),
-        ]);
+        const [insights, { daily, dailyRev }, ads, adIns, hourly, campMeta, adsetBudgets] =
+          await Promise.all([
+            graphGet<{ data: CampRow[] }>(
+              `/${actId}/insights`,
+              { level: "campaign", fields: INSIGHT_FIELDS, limit: 500, ...timeParams(spec) },
+              token,
+            ),
+            fetchDailySpend(actId, token, spec).catch(() => ({ daily: {}, dailyRev: {} })),
+            graphGetAll<AdLite>(`/${actId}/ads`, { fields: AD_CREATIVE_FIELDS, limit: 500 }, token).catch(
+              () => [] as AdLite[],
+            ),
+            graphGetAll<MetaInsightRow>(
+              `/${actId}/insights`,
+              { level: "ad", fields: AD_INSIGHT_FIELDS, limit: 500, ...timeParams(spec) },
+              token,
+            ).catch(() => [] as MetaInsightRow[]),
+            isToday
+              ? fetchHourly(actId, token, spec).catch(() => ({ hourlySpend: [], hourlyRev: [] }))
+              : Promise.resolve({ hourlySpend: [] as number[], hourlyRev: [] as number[] }),
+            // Budget is window-independent but only the full nightly sync refreshed it,
+            // so an on-demand range (e.g. "Today") showed stale/฿0 budgets after an edit
+            // in Business Suite. Refresh it here too: campaign-level (CBO) + ad-set sums.
+            graphGetAll<CampMeta>(`/${actId}/campaigns`, { fields: "id,daily_budget" }, token).catch(
+              () => [] as CampMeta[],
+            ),
+            fetchAdSetDailyBudgets(actId, token).catch(() => new Map<string, number>()),
+          ]);
 
         // Map insight rows → snapshot rows for campaigns we already know.
         const rows = (insights.data ?? []).filter((r) => r.campaign_id && campByMetaId.has(r.campaign_id));
@@ -191,6 +203,22 @@ export async function syncRange(
             })),
           });
           result.campaigns += rows.length;
+        }
+
+        // Refresh daily budgets for this account's known campaigns (campaign-level CBO,
+        // else summed active ad sets). Only write the ones that actually changed, grouped
+        // by value so it's a handful of updateMany calls, not one round-trip per campaign.
+        const changedByBudget = new Map<number, string[]>();
+        for (const cm of campMeta) {
+          const local = campByMetaId.get(cm.id);
+          if (!local || local.adAccountId !== account.id) continue;
+          const minor = effectiveDailyBudget(cm.daily_budget, adsetBudgets.get(cm.id));
+          if (minor === local.dailyBudgetMinor) continue;
+          (changedByBudget.get(minor) ?? changedByBudget.set(minor, []).get(minor)!).push(local.id);
+          local.dailyBudgetMinor = minor; // keep the cache in sync for later accounts/reads
+        }
+        for (const [minor, ids] of changedByBudget) {
+          await prisma.campaign.updateMany({ where: { id: { in: ids } }, data: { dailyBudgetMinor: minor } });
         }
 
         // Daily (and, for "today", hourly) spend + revenue series → BreakdownSnapshot

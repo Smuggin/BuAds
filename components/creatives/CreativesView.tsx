@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getCampaigns, getCreatives, getProducts } from "@/lib/api";
 import { FORMAT_META } from "@/lib/constants";
 import { filterCreatives, skusInCreatives } from "@/lib/creatives";
-import { fmtMoney, round1 } from "@/lib/format";
+import { fmtMetric, fmtMoney } from "@/lib/format";
 import { useAppStore, usePerfColor } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 import { CreativeDetail } from "./CreativeDetail";
@@ -127,8 +127,8 @@ export function CreativesView() {
                       )}
                     </div>
                     <div className="num mt-1 flex items-center gap-[10px] text-[11.5px] text-muted">
-                      <span style={{ color: pc(cr.roas) }}>{round1(cr.roas)}x</span>
-                      <span>{round1(cr.ctr)}%</span>
+                      <span style={{ color: pc(cr.roas) }}>{fmtMetric("roas", cr.roas)}</span>
+                      <span>{fmtMetric("ctr", cr.ctr)}</span>
                       <span>{fmtMoney(cr.spend)}</span>
                     </div>
                   </div>

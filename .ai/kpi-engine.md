@@ -12,13 +12,13 @@ Distilled from `reference/AdsHub.prototype.dc.html` (`evalCamp`, `buildCampRow`,
 
 | key   | label (short)   | dir   | money | unit | render |
 |-------|-----------------|-------|-------|------|--------|
-| `roas`| ROAS            | `min` | no    | `x`  | `4.6x` |
-| `ctr` | CTR             | `min` | no    | `%`  | `1.8%` |
-| `cpa` | CPA             | `max` | yes   | ฿    | `฿90`  |
-| `cpm` | CPM             | `max` | yes   | ฿    | `฿95`  |
-| `cpp` | ต้นทุน/ซื้อ (cost/purchase) | `max` | yes | ฿ | `฿150` |
-| `cpr` | C/Result (cost/result)      | `max` | yes | ฿ | `฿55`  |
-| `cost`| Cost/วัน (daily cost)       | `max` | yes | ฿ | `฿1,600` |
+| `roas`| ROAS            | `min` | no    | `x`  | `4.62x` |
+| `ctr` | CTR             | `min` | no    | `%`  | `1.83%` |
+| `cpa` | CPA             | `max` | yes   | ฿    | `฿90.00`  |
+| `cpm` | CPM             | `max` | yes   | ฿    | `฿95.32`  |
+| `cpp` | ต้นทุน/ซื้อ (cost/purchase) | `max` | yes | ฿ | `฿150.00` |
+| `cpr` | C/Result (cost/result)      | `max` | yes | ฿ | `฿55.00`  |
+| `cost`| Cost/วัน (daily cost)       | `max` | yes | ฿ | `฿1,600.00` |
 
 `min` ⇒ higher is better, threshold renders `≥`. `max` ⇒ lower is better, renders `≤`.
 Define this table once as `METRIC_DEFS`; everything iterates it.
@@ -169,10 +169,14 @@ A `+pct%` quick button shows a `✓` when the current draft equals that snapped 
 
 ## 6. Formatters (`lib/format.ts`)
 
+Money, ROAS and CTR render with **2 decimals** so every column reads 1:1 with Meta
+Business Suite (`฿5,000.00`, `฿95.32`, `4.62x`, `1.83%`). The app keeps its `x`/`%`/`฿`
+suffixes. `fmtK` (compact counts) stays at one decimal.
+
 ```
-fmtMoney(v)      = '฿' + round(v).toLocaleString()              // no decimals
-fmtMetric(k, v)  = k==='roas' ? round1(v)+'x'
-                 : k==='ctr'  ? round1(v)+'%'
+fmtMoney(v)      = '฿' + v.toLocaleString(_, {min/maxFractionDigits: 2})  // 2 decimals
+fmtMetric(k, v)  = k==='roas' ? v.toFixed(2)+'x'
+                 : k==='ctr'  ? v.toFixed(2)+'%'
                  :              fmtMoney(v)
 fmtThreshold(k,v)= fmtMetric(k, v)                              // rendered after ≥/≤
 fmtK(v)          = v>=1000 ? round1(v/1000)+'K' : String(v)     // impressions etc.

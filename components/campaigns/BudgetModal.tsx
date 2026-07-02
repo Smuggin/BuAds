@@ -1,7 +1,7 @@
 "use client";
 
 import { budgetSummary, scaleBudgetByPct, type CampaignState } from "@/lib/kpi";
-import { fmtMoney } from "@/lib/format";
+import { fmtMetric, fmtMoney } from "@/lib/format";
 import { NumberField } from "@/components/ui/NumberField";
 import { usePerfColor } from "@/store/AppProvider";
 import type { Campaign, Product } from "@/data/types";
@@ -153,7 +153,7 @@ export function BudgetModal({
               ผลงานปัจจุบัน · ตรวจสอบก่อนยืนยัน
             </div>
             <div className="grid grid-cols-4 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2">
-              <Mini label="ROAS" value={`${Math.round(campaign.metrics.roas * 10) / 10}x`} color={pc(campaign.metrics.roas)} />
+              <Mini label="ROAS" value={fmtMetric("roas", campaign.metrics.roas)} color={pc(campaign.metrics.roas)} />
               <Mini label="CPA" value={fmtMoney(campaign.metrics.cpa)} />
               <Mini label="ใช้จริง/วัน" value={fmtMoney(campaign.metrics.cost)} />
               <Mini label="ใช้งบ" value={`${util}%`} />

@@ -11,7 +11,8 @@ import { accountMetaFor } from "@/lib/constants";
 import { evalCampaign } from "@/lib/kpi";
 import { notifyOnce } from "@/lib/notify";
 import type { MetricKey } from "@/data/types";
-import { graphGet, graphGetAll, mapPool } from "./client";
+import { graphGet, graphGetAll, mapPool, UNIFIED_ATTRIBUTION } from "./client";
+import { fetchAdSetDailyBudgets, effectiveDailyBudget } from "./budget";
 import { getActiveToken } from "./auth";
 import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
 import { setCampaignStatus } from "./mutations";
@@ -137,12 +138,12 @@ export async function runSync(
       //      independent Graph calls — fire them together instead of one after another.
       //      Selection + auto-close use the 30d map; every window is stored as a snapshot.
       type CampRow = MetaInsightRow & { campaign_id?: string; campaign_name?: string };
-      const [windowEntries, metaRows] = await Promise.all([
+      const [windowEntries, metaRows, adsetBudgetByCampaign] = await Promise.all([
         Promise.all(
           campaignWindows.map(async (window) => {
             const res = await graphGet<{ data: CampRow[] }>(
               `/${actId}/insights`,
-              { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500 },
+              { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500, ...UNIFIED_ATTRIBUTION },
               token,
             );
             const m = new Map<string, CampRow>();
@@ -155,6 +156,9 @@ export async function runSync(
           { fields: "id,name,status,effective_status,objective,daily_budget" },
           token,
         ),
+        // Ad-set budgets, for non-CBO campaigns where the daily budget lives on the
+        // ad set (campaign.daily_budget is empty). One paginated call per account.
+        fetchAdSetDailyBudgets(actId, token),
       ]);
       const insByWindow = new Map<string, Map<string, CampRow>>(windowEntries);
       const delivering = insByWindow.get("last_30d")!;
@@ -190,7 +194,9 @@ export async function runSync(
           status: metaStatus,
           effectiveStatus: c?.effective_status,
           objective: c?.objective,
-          dailyBudgetMinor: c?.daily_budget ? parseInt(c.daily_budget) : 0,
+          // Campaign-level budget (CBO) wins; otherwise fall back to the summed
+          // ad-set budgets so non-CBO campaigns show their real งบต่อวัน, not ฿0.
+          dailyBudgetMinor: effectiveDailyBudget(c?.daily_budget, adsetBudgetByCampaign.get(id)),
           statusSource,
           adAccountId: account.id,
           productId,

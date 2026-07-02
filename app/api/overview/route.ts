@@ -3,11 +3,13 @@ import { prisma } from "@/lib/db";
 import { rangeToWindow } from "@/lib/windows";
 import { foldDailyByAccount, foldHourlyByAccount, type BreakdownAccum } from "@/lib/breakdown";
 import { accountMetaFor } from "@/lib/constants";
+import { fmtMetric, fmtMoney } from "@/lib/format";
 import type { OverviewAccountRow, OverviewDailyAccount, SummaryCard } from "@/data/types";
 import { requireAuth } from "@/lib/auth/guard";
 
-const baht = (n: number) => "฿" + Math.round(n).toLocaleString("en-US");
-const r2 = (n: number) => Math.round(n * 100) / 100;
+// Money/ROAS/CTR go through the shared formatters (2 decimals, 1:1 with Business Suite);
+// int is for whole counts (purchases, reach) that Business Suite shows without decimals.
+const baht = (n: number) => fmtMoney(n);
 const int = (n: number) => Math.round(n).toLocaleString("en-US");
 
 export async function GET(req: Request) {
@@ -43,8 +45,8 @@ export async function GET(req: Request) {
     const ctr = impr ? (clicks / impr) * 100 : 0;
     return {
       name: a.name, platform: a.platform, initials: a.initials,
-      spend: baht(spend), revenue: baht(rev), roas: r2(roas) + "x",
-      purchases: String(pur), cpa: baht(cpa), ctr: r2(ctr) + "%",
+      spend: baht(spend), revenue: baht(rev), roas: fmtMetric("roas", roas),
+      purchases: String(pur), cpa: baht(cpa), ctr: fmtMetric("ctr", ctr),
       status: a.status === "ACTIVE" ? "Active" : "Paused", rawSpend: Math.round(spend) || 0,
     };
   });
@@ -59,10 +61,10 @@ export async function GET(req: Request) {
   const summary: SummaryCard[] = [
     { key: "spend", en: "Total Spend", th: "รายจ่ายรวม", value: baht(tSpend), delta: "", tone: "neutral", up: true },
     { key: "revenue", en: "Revenue", th: "รายได้", value: baht(tRev), delta: "", tone: "pos", up: true },
-    { key: "roas", en: "ROAS", th: "ผลตอบแทน", value: r2(roasAll) + "x", delta: "", tone: "pos", up: true },
+    { key: "roas", en: "ROAS", th: "ผลตอบแทน", value: fmtMetric("roas", roasAll), delta: "", tone: "pos", up: true },
     { key: "purchases", en: "Purchases", th: "ยอดสั่งซื้อ", value: int(tPur), delta: "", tone: "pos", up: true },
     { key: "cpa", en: "Avg CPA", th: "ต้นทุน/ออเดอร์", value: baht(cpaAll), delta: "", tone: "pos", up: false },
-    { key: "ctr", en: "CTR", th: "อัตราคลิก", value: r2(ctrAll) + "%", delta: "", tone: "pos", up: true },
+    { key: "ctr", en: "CTR", th: "อัตราคลิก", value: fmtMetric("ctr", ctrAll), delta: "", tone: "pos", up: true },
     { key: "budget", en: "Daily Budget", th: "งบต่อวันรวม", value: baht(tDailyBudget), delta: "", tone: "neutral", up: true },
     { key: "avgSpend", en: "Avg / Campaign", th: "เฉลี่ย/แคมเปญ", value: baht(avgCampaignSpend), delta: "", tone: "neutral", up: true },
     { key: "reach100", en: "Reach / ฿100", th: "เข้าถึง/100฿", value: int(reachPer100), delta: "", tone: "pos", up: true },
