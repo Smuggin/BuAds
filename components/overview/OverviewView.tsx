@@ -13,6 +13,7 @@ export function OverviewView() {
   const accountFilter = useAppStore((s) => s.accountFilter);
   const range = useAppStore((s) => s.range);
   const customRange = useAppStore((s) => s.customRange);
+  const rangeSyncTick = useAppStore((s) => s.rangeSyncTick);
 
   useEffect(() => {
     let alive = true;
@@ -20,7 +21,7 @@ export function OverviewView() {
     return () => {
       alive = false;
     };
-  }, [accountFilter, range, customRange]);
+  }, [accountFilter, range, customRange, rangeSyncTick]);
 
   if (!data) return <OverviewSkeleton />;
 

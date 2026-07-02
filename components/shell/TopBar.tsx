@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { RANGES, TITLES } from "@/lib/constants";
 import { getAccounts, getBreakdownAccounts, type AccountOption } from "@/lib/api";
@@ -76,6 +76,16 @@ export function TopBar() {
       alive = false;
     };
   }, []);
+
+  // The app boots on "today", but that window is only synced on demand (the
+  // nightly schedule covers 7/30/90d) — refresh it once so the first paint
+  // isn't yesterday's snapshot. applyRange no-ops if a sync is already running.
+  const bootRefreshed = useRef(false);
+  useEffect(() => {
+    if (bootRefreshed.current || range !== "today") return;
+    bootRefreshed.current = true;
+    void applyRange("today").catch(() => {});
+  }, [range, applyRange]);
 
   useEffect(() => {
     if (!onBreakdown) return;

@@ -96,6 +96,9 @@ export interface AppState {
   // top bar
   range: RangeId;
   customRange: CustomRange | null; // active dates when range === "custom"
+  // bumped when an on-demand range sync lands, so views refetch even when the
+  // range value itself didn't change (e.g. the boot-time "today" refresh)
+  rangeSyncTick: number;
   accountFilter: AccountKey | "all"; // global ad-account scope (metaAccountId | all)
 
   // KPI summary strip — which cards are visible (keys from /api/overview superset)
@@ -240,8 +243,9 @@ export type AppStore = AppState & AppActions;
 export const initialAppState: AppState = {
   accent: "blue",
   colorByPerformance: true,
-  range: "30d",
+  range: "today",
   customRange: null,
+  rangeSyncTick: 0,
   accountFilter: "all",
   visibleKpiKeys: DEFAULT_KPI_KEYS,
   notifOpen: false,
@@ -314,7 +318,12 @@ export function createAppStore(init: Partial<AppState> = {}) {
       set({ syncProgress: { pct: 0, stage: "เริ่มซิงค์ · Starting…" } });
       try {
         await streamRangeSync(range, c, (p) => set({ syncProgress: p }));
-        set({ range, customRange: c, syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" } });
+        set((s) => ({
+          range,
+          customRange: c,
+          rangeSyncTick: s.rangeSyncTick + 1,
+          syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" },
+        }));
         setTimeout(() => set((s) => (s.syncProgress?.pct === 100 ? { syncProgress: null } : {})), 1200);
       } catch (e) {
         set({ syncProgress: null });
