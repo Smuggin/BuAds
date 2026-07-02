@@ -159,7 +159,9 @@ export function CampaignGroupTable({
                     </div>
                   </td>
 
-                  {r.evalResult.cells.map((cell) => (
+                  {r.evalResult.cells
+                    .filter((cell) => CAMPAIGN_METRIC_DEFS.some((m) => m.key === cell.key))
+                    .map((cell) => (
                     <td key={cell.key} className="border-t border-border-2 px-[11px] py-3 text-right">
                       <span
                         className="num text-[12px] font-semibold"
