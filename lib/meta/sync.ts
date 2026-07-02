@@ -12,6 +12,7 @@ import { evalCampaign } from "@/lib/kpi";
 import { notifyOnce } from "@/lib/notify";
 import type { MetricKey } from "@/data/types";
 import { graphGet, graphGetAll, mapPool } from "./client";
+import { fetchAdSetDailyBudgets, effectiveDailyBudget } from "./budget";
 import { getActiveToken } from "./auth";
 import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
 import { setCampaignStatus } from "./mutations";
@@ -29,7 +30,6 @@ const AUTO_CLOSE_ENABLED = (process.env.META_AUTO_CLOSE ?? "off").toLowerCase() 
 
 interface MetaAccount { account_id: string; name: string; currency?: string; account_status?: number }
 interface MetaCampaign { id: string; name: string; status?: string; effective_status?: string; objective?: string; daily_budget?: string }
-interface MetaAdSet { id: string; campaign_id?: string; status?: string; daily_budget?: string }
 
 export interface SyncResult {
   accounts: number;
@@ -138,7 +138,7 @@ export async function runSync(
       //      independent Graph calls — fire them together instead of one after another.
       //      Selection + auto-close use the 30d map; every window is stored as a snapshot.
       type CampRow = MetaInsightRow & { campaign_id?: string; campaign_name?: string };
-      const [windowEntries, metaRows, adsetRows] = await Promise.all([
+      const [windowEntries, metaRows, adsetBudgetByCampaign] = await Promise.all([
         Promise.all(
           campaignWindows.map(async (window) => {
             const res = await graphGet<{ data: CampRow[] }>(
@@ -158,27 +158,11 @@ export async function runSync(
         ),
         // Ad-set budgets, for non-CBO campaigns where the daily budget lives on the
         // ad set (campaign.daily_budget is empty). One paginated call per account.
-        graphGetAll<MetaAdSet>(
-          `/${actId}/adsets`,
-          { fields: "campaign_id,status,daily_budget", limit: 500 },
-          token,
-        ),
+        fetchAdSetDailyBudgets(actId, token),
       ]);
       const insByWindow = new Map<string, Map<string, CampRow>>(windowEntries);
       const delivering = insByWindow.get("last_30d")!;
       const metaById = new Map(metaRows.map((c) => [c.id, c]));
-      // Effective daily budget for ad-set-budget (non-CBO) campaigns = sum of the
-      // ACTIVE ad sets' daily budgets — this is the number Meta Business Suite shows.
-      // Paused ad sets don't spend, so they're excluded. Lifetime-budget ad sets have
-      // no daily_budget and contribute nothing.
-      const adsetBudgetByCampaign = new Map<string, number>();
-      for (const s of adsetRows) {
-        if (!s.campaign_id || !s.daily_budget) continue;
-        if ((s.status ?? "").toUpperCase() !== "ACTIVE") continue;
-        const minor = parseInt(s.daily_budget);
-        if (!Number.isFinite(minor)) continue;
-        adsetBudgetByCampaign.set(s.campaign_id, (adsetBudgetByCampaign.get(s.campaign_id) ?? 0) + minor);
-      }
 
       // 3. upsert campaigns that delivered OR are active
       const ids = new Set<string>([
@@ -212,7 +196,7 @@ export async function runSync(
           objective: c?.objective,
           // Campaign-level budget (CBO) wins; otherwise fall back to the summed
           // ad-set budgets so non-CBO campaigns show their real งบต่อวัน, not ฿0.
-          dailyBudgetMinor: c?.daily_budget ? parseInt(c.daily_budget) : (adsetBudgetByCampaign.get(id) ?? 0),
+          dailyBudgetMinor: effectiveDailyBudget(c?.daily_budget, adsetBudgetByCampaign.get(id)),
           statusSource,
           adAccountId: account.id,
           productId,
