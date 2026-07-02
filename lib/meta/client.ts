@@ -103,13 +103,38 @@ export async function graphGetAll<T>(
 ): Promise<T[]> {
   const out: T[] = [];
   let after: string | undefined;
+  // Honor a caller-supplied page size (Meta accepts up to 500 on most edges);
+  // fall back to 100. Fewer pages ⇒ fewer round-trips.
+  const limit = params.limit ?? 100;
   for (let page = 0; page < maxPages; page++) {
-    const res = await graphGet<Paged<T>>(path, { ...params, after, limit: 100 }, token);
+    const res = await graphGet<Paged<T>>(path, { ...params, after, limit }, token);
     out.push(...(res.data ?? []));
     after = res.paging?.cursors?.after;
     if (!after || !res.paging?.next) break;
   }
   return out;
+}
+
+/**
+ * Run `fn` over `items` with at most `limit` promises in flight. Preserves input
+ * order in the result. Used to fan out per-account / per-window Graph calls without
+ * blasting the API (or the DB pool) all at once.
+ */
+export async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runner = async (): Promise<void> => {
+    for (let i = next++; i < items.length; i = next++) {
+      results[i] = await fn(items[i], i);
+    }
+  };
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, runner);
+  await Promise.all(workers);
+  return results;
 }
 
 export { VERSION as META_API_VERSION };

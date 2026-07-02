@@ -11,7 +11,7 @@ import { accountMetaFor } from "@/lib/constants";
 import { evalCampaign } from "@/lib/kpi";
 import { notifyOnce } from "@/lib/notify";
 import type { MetricKey } from "@/data/types";
-import { graphGet, graphGetAll } from "./client";
+import { graphGet, graphGetAll, mapPool } from "./client";
 import { getActiveToken } from "./auth";
 import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
 import { setCampaignStatus } from "./mutations";
@@ -94,6 +94,17 @@ export async function runSync(
 
   const accounts = await gatherAccounts(token);
   const targets = accounts.filter((a) => !allow.length || allow.includes(`act_${a.account_id}`));
+
+  // Products are account-independent — fetch once and reuse for every account
+  // (was re-queried inside the per-account loop).
+  const products = await prisma.product.findMany({
+    select: {
+      id: true, sku: true, thName: true, closeMode: true, skipMetrics: true,
+      thrRoas: true, thrCtr: true, thrCpa: true, thrCpm: true, thrCpp: true, thrCpr: true, thrCost: true,
+    },
+  });
+  const productById = new Map(products.map((p) => [p.id, p]));
+
   // Progress: one substep per account per stage (campaigns [+ creatives, breakdown in full]).
   const subPerAcct = mode === "full" ? 3 : 1;
   const totalSteps = Math.max(1, targets.length * subPerAcct);
@@ -102,8 +113,7 @@ export async function runSync(
     onProgress?.({ stage, pct: Math.min(99, Math.round((doneSteps / totalSteps) * 100)) });
   onProgress?.({ stage: `พบ ${targets.length} บัญชี · ${targets.length} accounts`, pct: 2 });
 
-  for (let ai = 0; ai < targets.length; ai++) {
-    const a = targets[ai];
+  const syncAccount = async (a: MetaAccount, ai: number): Promise<void> => {
     const actId = `act_${a.account_id}`;
     try {
       const meta = accountMetaFor(actId, a.name);
@@ -120,38 +130,34 @@ export async function runSync(
       counts.accounts++;
       emit(`แคมเปญ · Campaigns — ${a.name} (${ai + 1}/${targets.length})`);
 
-      const products = await prisma.product.findMany({
-        select: {
-          id: true, sku: true, thName: true, closeMode: true, skipMetrics: true,
-          thrRoas: true, thrCtr: true, thrCpa: true, thrCpm: true, thrCpp: true, thrCpr: true, thrCost: true,
-        },
-      });
-      const productById = new Map(products.map((p) => [p.id, p]));
       // metaCampaignId → local Campaign row, for linking creatives in the creative pass.
       const campaignIdMap = new Map<string, CampaignRef>();
 
-      // 1. campaign insights per window (7/30/90d) — names + metrics come from insights.
-      //    Selection + auto-close use the 30d map; all three are stored as snapshots.
+      // 1+2. campaign insights per window (7/30/90d) and campaign metadata are all
+      //      independent Graph calls — fire them together instead of one after another.
+      //      Selection + auto-close use the 30d map; every window is stored as a snapshot.
       type CampRow = MetaInsightRow & { campaign_id?: string; campaign_name?: string };
-      const insByWindow = new Map<string, Map<string, CampRow>>();
-      for (const window of campaignWindows) {
-        const res = await graphGet<{ data: CampRow[] }>(
-          `/${actId}/insights`,
-          { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500 },
+      const [windowEntries, metaRows] = await Promise.all([
+        Promise.all(
+          campaignWindows.map(async (window) => {
+            const res = await graphGet<{ data: CampRow[] }>(
+              `/${actId}/insights`,
+              { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500 },
+              token,
+            );
+            const m = new Map<string, CampRow>();
+            for (const row of res.data ?? []) if (row.campaign_id) m.set(row.campaign_id, row);
+            return [window, m] as const;
+          }),
+        ),
+        graphGetAll<MetaCampaign>(
+          `/${actId}/campaigns`,
+          { fields: "id,name,status,effective_status,objective,daily_budget" },
           token,
-        );
-        const m = new Map<string, CampRow>();
-        for (const row of res.data ?? []) if (row.campaign_id) m.set(row.campaign_id, row);
-        insByWindow.set(window, m);
-      }
+        ),
+      ]);
+      const insByWindow = new Map<string, Map<string, CampRow>>(windowEntries);
       const delivering = insByWindow.get("last_30d")!;
-
-      // 2. campaign metadata (status/budget/objective)
-      const metaRows = await graphGetAll<MetaCampaign>(
-        `/${actId}/campaigns`,
-        { fields: "id,name,status,effective_status,objective,daily_budget" },
-        token,
-      );
       const metaById = new Map(metaRows.map((c) => [c.id, c]));
 
       // 3. upsert campaigns that delivered OR are active
@@ -159,10 +165,20 @@ export async function runSync(
         ...delivering.keys(),
         ...metaRows.filter((c) => toAdStatus(c.status) === "ACTIVE").map((c) => c.id),
       ]);
+      // Prefetch existing rows for this account in one query — was a findUnique per
+      // campaign, each a full cross-region round-trip.
+      const existingByMetaId = new Map(
+        (
+          await prisma.campaign.findMany({
+            where: { metaCampaignId: { in: [...ids] } },
+            select: { metaCampaignId: true, productId: true, status: true, statusSource: true },
+          })
+        ).map((c) => [c.metaCampaignId, c]),
+      );
       for (const id of ids) {
         const c = metaById.get(id);
         const name = c?.name ?? delivering.get(id)?.campaign_name ?? "Campaign";
-        const existing = await prisma.campaign.findUnique({ where: { metaCampaignId: id } });
+        const existing = existingByMetaId.get(id);
         const productId = existing?.productId ?? matchCampaignToProduct(name, products);
         const metaStatus = toAdStatus(c?.status);
         // Keep our own marker (AUTO/MANUAL) while Meta's status is unchanged since the
@@ -187,15 +203,20 @@ export async function runSync(
         counts.campaigns++;
 
         const row = delivering.get(id); // 30d row drives auto-close below
-        for (const window of campaignWindows) {
+        // Replace this campaign's window snapshots in two queries (was a
+        // deleteMany + create per window — 6 round-trips → 2).
+        await prisma.insightSnapshot.deleteMany({
+          where: { level: "CAMPAIGN", campaignId: camp.id, window: { in: [...campaignWindows] } },
+        });
+        const snapRows = campaignWindows.flatMap((window) => {
           const wr = insByWindow.get(window)!.get(id);
-          await prisma.insightSnapshot.deleteMany({ where: { level: "CAMPAIGN", window, campaignId: camp.id } });
-          if (wr) {
-            await prisma.insightSnapshot.create({
-              data: { level: "CAMPAIGN", window, campaignId: camp.id, ...insightMetrics(wr), fetchedAt: new Date() },
-            });
-            counts.insights++;
-          }
+          return wr
+            ? [{ level: "CAMPAIGN" as const, window, campaignId: camp.id, ...insightMetrics(wr), fetchedAt: new Date() }]
+            : [];
+        });
+        if (snapRows.length) {
+          await prisma.insightSnapshot.createMany({ data: snapRows });
+          counts.insights += snapRows.length;
         }
 
         // KPI verdict for a still-active campaign whose product enforces a close
@@ -242,7 +263,7 @@ export async function runSync(
 
       // map mode stops here — discovery + grouping + 30d campaign metrics only.
       doneSteps++; // campaign + insights stage complete
-      if (mode !== "full") continue;
+      if (mode !== "full") return;
 
       // 4. creative pass — every ad/creative + its post & video funnel (after the
       // campaign pass so links resolve against just-synced campaigns).
@@ -259,29 +280,36 @@ export async function runSync(
       counts.errors.push(...cr.errors);
       doneSteps++; // creative stage complete
 
-      // 5. account-level audience breakdown per window (Breakdown page).
+      // 5. account-level audience breakdown per window (Breakdown page) — windows are
+      //    independent, so fetch + upsert them concurrently instead of serially.
       emit(`ผู้ชม · Audience — ${a.name} (${ai + 1}/${targets.length})`);
-      for (const window of INSIGHT_WINDOWS) {
-        try {
-          const data = (await fetchBreakdown(actId, token, {
-            key: window,
-            datePreset: window,
-          })) as unknown as Prisma.InputJsonValue;
-          await prisma.breakdownSnapshot.upsert({
-            where: { adAccountId_window: { adAccountId: account.id, window } },
-            update: { data, fetchedAt: new Date() },
-            create: { adAccountId: account.id, window, data, fetchedAt: new Date() },
-          });
-          counts.breakdowns++;
-        } catch (e) {
-          counts.errors.push(`breakdown ${actId} ${window}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
+      await Promise.all(
+        INSIGHT_WINDOWS.map(async (window) => {
+          try {
+            const data = (await fetchBreakdown(actId, token, {
+              key: window,
+              datePreset: window,
+            })) as unknown as Prisma.InputJsonValue;
+            await prisma.breakdownSnapshot.upsert({
+              where: { adAccountId_window: { adAccountId: account.id, window } },
+              update: { data, fetchedAt: new Date() },
+              create: { adAccountId: account.id, window, data, fetchedAt: new Date() },
+            });
+            counts.breakdowns++;
+          } catch (e) {
+            counts.errors.push(`breakdown ${actId} ${window}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }),
+      );
       doneSteps++; // breakdown stage complete
     } catch (e) {
       counts.errors.push(`${actId}: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }
+  };
+
+  // Accounts touch disjoint rows and Meta rate-limits per account, so sync several at
+  // once. Cap concurrency to stay friendly to the Graph API and the Postgres pool.
+  await mapPool(targets, 4, syncAccount);
 
   onProgress?.({ stage: "เสร็จสิ้น · Done", pct: 100 });
   return counts;
