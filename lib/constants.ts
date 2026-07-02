@@ -98,7 +98,7 @@ export const METRIC_DEFS: MetricDef[] = [
   { key: "ctr", short: "CTR", dir: "min", money: false, suffix: "%" },
   { key: "cpa", short: "CPA", dir: "max", money: true, suffix: "" },
   { key: "cpm", short: "CPM", dir: "max", money: true, suffix: "" },
-  { key: "cpp", short: "ต้นทุน/ซื้อ", dir: "max", money: true, suffix: "" },
+  { key: "cpp", short: "Purchase", dir: "max", money: true, suffix: "" },
   { key: "cost", short: "Cost/วัน", dir: "max", money: true, suffix: "" },
 ];
 

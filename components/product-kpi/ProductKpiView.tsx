@@ -26,8 +26,7 @@ const META_LABEL: Partial<Record<MetricKey, string>> = {
   roas: "Purchase ROAS",
   ctr: "CTR (all)",
   cpm: "CPM",
-  cpp: "Cost per purchase",
-  cpr: "Cost per result",
+  cpp: "Purchase",
 };
 const KPI_METRICS = KPI_METRIC_DEFS; // shared with the campaign table (constants)
 const kpiKeys = KPI_METRICS.map((m) => m.key as MetricKey);
