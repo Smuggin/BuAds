@@ -28,7 +28,8 @@ export type { BreakdownData };
 export interface OverviewData {
   summary: SummaryCard[];
   daily: number[];
-  dailyDates?: string[]; // ISO dates aligned to `daily`, for the chart axis
+  dailyDates?: string[]; // axis labels aligned to the series — ISO dates, or "HH:00" when hourly
+  dailyGranularity?: "day" | "hour"; // "hour" for the "today" range (bars are per hour)
   dailyByAccount?: OverviewDailyAccount[]; // per-account spend+revenue series (stacked chart)
   accounts: OverviewAccountRow[];
   breakdown: {

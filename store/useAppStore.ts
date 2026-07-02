@@ -308,7 +308,12 @@ export function createAppStore(init: Partial<AppState> = {}) {
       set({ syncProgress: { pct: 0, stage: "เริ่มซิงค์ · Starting…" } });
       try {
         const result = await streamMetaSync((p) => set({ syncProgress: p }));
-        set({ syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" } });
+        // bump the data tick so every read view (Overview chart, tables, …) refetches
+        // in place — a full sync rewrites the preset windows behind the current view.
+        set((s) => ({
+          rangeSyncTick: s.rangeSyncTick + 1,
+          syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" },
+        }));
         // let the finished bar linger briefly, then clear (unless a new sync started)
         setTimeout(() => set((s) => (s.syncProgress?.pct === 100 ? { syncProgress: null } : {})), 1600);
         return result;

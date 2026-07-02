@@ -17,11 +17,12 @@ function fmtDay(iso: string): string {
   return `${Number(m[3])} ${TH_MONTHS[Number(m[2]) - 1] ?? ""}`.trim();
 }
 
-/** Up to `count` evenly-spaced axis labels derived from the date series. */
-function axisLabels(dates: string[], count = 5): string[] {
-  if (dates.length <= count) return dates.map(fmtDay);
+/** Up to `count` evenly-spaced axis labels derived from the series. `fmt` turns a
+ *  raw label (ISO date, or "HH:00" when hourly) into its display form. */
+function axisLabels(dates: string[], fmt: (s: string) => string, count = 5): string[] {
+  if (dates.length <= count) return dates.map(fmt);
   const step = (dates.length - 1) / (count - 1);
-  return Array.from({ length: count }, (_, i) => fmtDay(dates[Math.round(i * step)]));
+  return Array.from({ length: count }, (_, i) => fmt(dates[Math.round(i * step)]));
 }
 
 type Mode = "spend" | "revenue";
@@ -33,19 +34,24 @@ type Mode = "spend" | "revenue";
 export function DailySpendCard({
   series = [],
   dates = [],
+  granularity = "day",
 }: {
   series?: OverviewDailyAccount[];
   dates?: string[];
+  granularity?: "day" | "hour";
 }) {
   const [mode, setMode] = useState<Mode>("spend");
   const pick = (a: OverviewDailyAccount) => (mode === "spend" ? a.spend : a.revenue);
+  const hourly = granularity === "hour";
+  // Hourly labels arrive pre-formatted ("HH:00"); daily ones are ISO dates.
+  const fmtLabel = (s: string) => (hourly ? s : fmtDay(s));
 
-  // Per-day totals across accounts (aligned to `dates`).
+  // Per-bucket totals across accounts (aligned to `dates`).
   const totals = dates.map((_, i) => series.reduce((s, a) => s + (pick(a)[i] ?? 0), 0));
   const max = totals.length ? Math.max(...totals, 1) : 1;
-  const nonZeroDays = totals.filter((v) => v > 0).length;
-  const avg = nonZeroDays ? Math.round(totals.reduce((s, v) => s + v, 0) / nonZeroDays) : 0;
-  const axis = axisLabels(dates);
+  const nonZeroBuckets = totals.filter((v) => v > 0).length;
+  const avg = nonZeroBuckets ? Math.round(totals.reduce((s, v) => s + v, 0) / nonZeroBuckets) : 0;
+  const axis = axisLabels(dates, fmtLabel);
   const hasData = dates.length > 0 && totals.some((v) => v > 0);
   const multiAccount = series.length > 1;
 
@@ -54,17 +60,19 @@ export function DailySpendCard({
       <div className="mb-[18px] flex items-baseline justify-between gap-3">
         <div>
           <div className="text-section-title">
-            {mode === "spend" ? "รายจ่ายรายวัน · Daily spend" : "รายได้รายวัน · Daily revenue"}
+            {mode === "spend"
+              ? hourly ? "รายจ่ายรายชั่วโมง · Hourly spend" : "รายจ่ายรายวัน · Daily spend"
+              : hourly ? "รายได้รายชั่วโมง · Hourly revenue" : "รายได้รายวัน · Daily revenue"}
           </div>
           <div className="text-[12px] text-muted">
             {dates.length
-              ? `${dates.length} วันล่าสุด · ${multiAccount ? `${series.length} accounts stacked` : "1 account"}`
+              ? `${hourly ? "วันนี้ · today" : `${dates.length} วันล่าสุด`} · ${multiAccount ? `${series.length} accounts stacked` : "1 account"}`
               : "all accounts combined"}
           </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="num whitespace-nowrap text-[13px] text-muted-2">
-            avg {fmtMoney(avg)}/d
+            avg {fmtMoney(avg)}/{hourly ? "hr" : "d"}
           </div>
           {/* Spend / Revenue mode toggle */}
           <div className="flex rounded-control border border-border bg-field-bg p-[2px] text-[11.5px] font-semibold">
@@ -118,7 +126,7 @@ export function DailySpendCard({
                     {/* hover tooltip: per-account amounts + total for the day */}
                     <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden min-w-[132px] -translate-x-1/2 whitespace-nowrap rounded-[7px] bg-ink px-[9px] py-[7px] text-[10.5px] text-white shadow-dropdown group-hover:block">
                       <div className="mb-[5px] flex items-center justify-between gap-3 border-b border-white/15 pb-[4px] font-semibold">
-                        <span>{dates[di] ? fmtDay(dates[di]) : ""}</span>
+                        <span>{dates[di] ? fmtLabel(dates[di]) : ""}</span>
                         <span className="num">{fmtMoney(total)}</span>
                       </div>
                       {series.map((a, ai) => {

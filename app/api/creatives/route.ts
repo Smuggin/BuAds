@@ -52,6 +52,9 @@ export async function GET(req: Request) {
     if (account !== "all" && !accounts.has(account)) continue;
 
     const i = cr.insights.find((x) => x.window === window); // selected-window metrics
+    // Audience is 30d-derived and reused across windows by the full sync, so short
+    // windows (today/custom) that carry no audience of their own fall back to it.
+    const audience30 = cr.insights.find((x) => x.window === "last_30d")?.audience;
     const spend = i ? Number(i.spend) : 0;
     const creative: Creative = {
       id: cr.metaCreativeId,
@@ -75,7 +78,7 @@ export async function GET(req: Request) {
       adStatus: cr.adStatus ?? undefined,
       video: (i?.video as CreativeVideo | null) ?? undefined,
       engagement: (i?.engagement as CreativeEngagement | null) ?? undefined,
-      audience: (i?.audience as AudienceProfile | null) ?? undefined,
+      audience: ((i?.audience ?? audience30) as AudienceProfile | null) ?? undefined,
     };
 
     inputs.push({

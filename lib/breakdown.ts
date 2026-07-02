@@ -27,6 +27,8 @@ export interface BreakdownAccum {
   day: number[]; // 7 — Mon..Sun (impressions)
   daily?: Record<string, number>; // ISO date (YYYY-MM-DD) → spend, over the window
   dailyRev?: Record<string, number>; // ISO date → revenue (spend × ROAS), over the window
+  hourlySpend?: number[]; // 24 — spend per hour 0..23 (today only; drives the hourly chart)
+  hourlyRev?: number[]; // 24 — revenue per hour 0..23 (today only)
 }
 
 /** Per-account daily series, aligned to a shared date axis (see foldDailyByAccount). */
@@ -100,6 +102,25 @@ export function foldDailyByAccount(
     // drop accounts with no spend AND no revenue across the whole window
     .filter((a) => a.spend.some((v) => v > 0) || a.revenue.some((v) => v > 0));
   return { dates, accounts };
+}
+
+/** Keep every account's hourly spend + revenue as its own series on a shared
+ *  24-hour axis (00:00..23:00). Powers the stacked chart when the range is "today",
+ *  where a single daily bar would be useless. Same shape as foldDailyByAccount so
+ *  the chart component renders it unchanged. */
+export function foldHourlyByAccount(
+  rows: { metaAccountId: string; name: string; accum: BreakdownAccum }[],
+): { labels: string[]; accounts: DailyAccountSeries[] } {
+  const labels = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}:00`);
+  const accounts = rows
+    .map((r) => ({
+      metaAccountId: r.metaAccountId,
+      name: r.name,
+      spend: Array.from({ length: 24 }, (_, h) => Math.round(r.accum.hourlySpend?.[h] ?? 0)),
+      revenue: Array.from({ length: 24 }, (_, h) => Math.round(r.accum.hourlyRev?.[h] ?? 0)),
+    }))
+    .filter((a) => a.spend.some((v) => v > 0) || a.revenue.some((v) => v > 0));
+  return { labels, accounts };
 }
 
 /** Sum many per-account accumulators and derive the display rows. ROAS per segment

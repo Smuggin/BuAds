@@ -311,6 +311,15 @@ export async function runSync(
   // once. Cap concurrency to stay friendly to the Graph API and the Postgres pool.
   await mapPool(targets, 4, syncAccount);
 
+  // Coarse timing so we can compare wall-clock before/after co-locating the function
+  // with the DB (see vercel.json regions). Shows total elapsed + what got written.
+  const elapsedMs = Date.now() - Date.parse(startedAt);
+  console.log(
+    `[sync] mode=${mode} accounts=${counts.accounts} campaigns=${counts.campaigns} ` +
+      `creatives=${counts.creatives} insights=${counts.insights} breakdowns=${counts.breakdowns} ` +
+      `elapsed=${elapsedMs}ms errors=${counts.errors.length}`,
+  );
+
   onProgress?.({ stage: "เสร็จสิ้น · Done", pct: 100 });
   return counts;
 }

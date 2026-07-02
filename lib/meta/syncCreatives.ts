@@ -26,7 +26,7 @@ const ADS_FIELDS =
   "creative{id,name,object_type,thumbnail_url,image_url,video_id," +
   "effective_object_story_id,object_story_id,instagram_permalink_url}";
 
-const AD_INSIGHT_FIELDS =
+export const AD_INSIGHT_FIELDS =
   "ad_id,campaign_id,spend,impressions,clicks,ctr,cpm,reach,frequency," +
   "purchase_roas,actions,cost_per_action_type," +
   "video_play_actions,video_thruplay_watched_actions," +
