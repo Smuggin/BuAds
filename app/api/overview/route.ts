@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { rangeToWindow } from "@/lib/windows";
-import { foldDailyByAccount, type BreakdownAccum } from "@/lib/breakdown";
+import { foldDailyByAccount, foldHourlyByAccount, type BreakdownAccum } from "@/lib/breakdown";
 import { accountMetaFor } from "@/lib/constants";
 import type { OverviewAccountRow, OverviewDailyAccount, SummaryCard } from "@/data/types";
 import { requireAuth } from "@/lib/auth/guard";
@@ -74,13 +74,16 @@ export async function GET(req: Request) {
     where: { window, ...(account !== "all" ? { adAccount: { metaAccountId: account } } : {}) },
     include: { adAccount: { select: { metaAccountId: true, name: true } } },
   });
-  const { dates, accounts: series } = foldDailyByAccount(
-    bdRows.map((r) => ({
-      metaAccountId: r.adAccount.metaAccountId,
-      name: r.adAccount.name,
-      accum: r.data as unknown as BreakdownAccum,
-    })),
-  );
+  // "today" is a single day — show hourly bars (00:00..23:00) instead of one daily bar.
+  const hourly = window === "today";
+  const foldRows = bdRows.map((r) => ({
+    metaAccountId: r.adAccount.metaAccountId,
+    name: r.adAccount.name,
+    accum: r.data as unknown as BreakdownAccum,
+  }));
+  const { dates, accounts: series } = hourly
+    ? (({ labels, accounts }) => ({ dates: labels, accounts }))(foldHourlyByAccount(foldRows))
+    : foldDailyByAccount(foldRows);
   const dailyByAccount: OverviewDailyAccount[] = series.map((s) => {
     const meta = accountMetaFor(s.metaAccountId, s.name);
     return { name: meta.th, initials: meta.initials, color: meta.color, spend: s.spend, revenue: s.revenue };
@@ -93,6 +96,7 @@ export async function GET(req: Request) {
     summary,
     daily,
     dailyDates: dates,
+    dailyGranularity: hourly ? "hour" : "day",
     dailyByAccount,
     accounts: accountRows,
     breakdown: { age: [], gender: [], province: [], heat: { days: [], grid: [] } },

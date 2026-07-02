@@ -273,6 +273,14 @@ export function hourBucket12(label: string): number {
   return h >= 0 && h <= 23 ? Math.floor(h / 2) : -1;
 }
 
+/** Meta hourly-stats label ("13:00:00 - 13:59:59") → hour 0..23. -1 if unparseable. */
+export function hourIndex24(label: string): number {
+  const m = label.match(/^\s*(\d{1,2})/);
+  if (!m) return -1;
+  const h = parseInt(m[1], 10);
+  return h >= 0 && h <= 23 ? h : -1;
+}
+
 /** "YYYY-MM-DD" → weekday index 0=Mon..6=Sun. -1 if unparseable. */
 export function weekdayIndexMon(dateStart: string): number {
   const d = new Date(`${dateStart}T00:00:00Z`);

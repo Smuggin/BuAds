@@ -28,7 +28,7 @@ export function OverviewView() {
   return (
     <div className="flex flex-col gap-[18px]">
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.9fr_1fr]">
-        <DailySpendCard series={data.dailyByAccount} dates={data.dailyDates} />
+        <DailySpendCard series={data.dailyByAccount} dates={data.dailyDates} granularity={data.dailyGranularity} />
         <SpendShareCard accounts={data.accounts} />
       </section>
       <AccountsTable accounts={data.accounts} />
