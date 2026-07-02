@@ -2,7 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { assignCampaignProduct, getCampaigns, getCreatives, getLogs, getProducts, runStatusSync } from "@/lib/api";
+import {
+  applyCampaignChanges,
+  assignCampaignProduct,
+  getCampaigns,
+  getCreatives,
+  getLogs,
+  getProducts,
+  runStatusSync,
+  type CampaignChange,
+  type CampaignChangeResult,
+} from "@/lib/api";
 import { accountMetaFor, firstSortDir } from "@/lib/constants";
 import { buildCampaignGroups, shouldCloseGroup, type CampSortKey } from "@/lib/campaigns";
 import { effBudget, effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
@@ -12,6 +22,8 @@ import { Card } from "@/components/ui/Card";
 import { CampaignGroupTable } from "./CampaignGroupTable";
 import { AssignSkuModal } from "./AssignSkuModal";
 import { BudgetModal } from "./BudgetModal";
+import { SaveChangesBar } from "./SaveChangesBar";
+import { ConfirmChangesModal, type PendingChange } from "./ConfirmChangesModal";
 import { HistoryModal } from "./HistoryModal";
 import { CampaignDetail } from "./CampaignDetail";
 import type { Campaign, Creative, LogEntry, Product } from "@/data/types";
@@ -32,6 +44,8 @@ export function CampaignsView() {
   const [creatives, setCreatives] = useState<Creative[] | null>(null);
   const [logs, setLogs] = useState<LogEntry[] | null>(null);
   const [assigning, setAssigning] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveResults, setSaveResults] = useState<CampaignChangeResult[] | null>(null);
 
   // store
   const groupBy = useAppStore((s) => s.groupBy);
@@ -46,6 +60,7 @@ export function CampaignsView() {
   const campOverride = useAppStore((s) => s.campOverride);
   const campDetail = useAppStore((s) => s.campDetail);
   const budgetModal = useAppStore((s) => s.budgetModal);
+  const saveChangesOpen = useAppStore((s) => s.saveChangesOpen);
   const assignModal = useAppStore((s) => s.assignModal);
   const historyModal = useAppStore((s) => s.historyModal);
   const creativeOpen = useAppStore((s) => s.creativeOpen);
@@ -62,6 +77,10 @@ export function CampaignsView() {
   const setBudgetDraft = useAppStore((s) => s.setBudgetDraft);
   const setBudgetOverride = useAppStore((s) => s.setBudgetOverride);
   const closeBudgetModal = useAppStore((s) => s.closeBudgetModal);
+  const openSaveChanges = useAppStore((s) => s.openSaveChanges);
+  const closeSaveChanges = useAppStore((s) => s.closeSaveChanges);
+  const discardCampaignChanges = useAppStore((s) => s.discardCampaignChanges);
+  const clearCampaignOverrides = useAppStore((s) => s.clearCampaignOverrides);
   const openAssign = useAppStore((s) => s.openAssign);
   const setAssignDraft = useAppStore((s) => s.setAssignDraft);
   const closeAssign = useAppStore((s) => s.closeAssign);
@@ -152,6 +171,56 @@ export function CampaignsView() {
   const shouldClose = shouldCloseGroup(groups);
 
   const onSort = (key: CampSortKey) => setCampSort(key, firstSortDir(key));
+
+  // Staged (unsaved) edits: an on/off flip and/or a budget change per campaign, diffed
+  // against the real Meta values (c.status / c.budget). Drives the Save bar + review modal.
+  const pendingChanges: PendingChange[] = campaigns
+    .map((c): PendingChange | null => {
+      const metaOn = c.status === "ACTIVE";
+      const wantOn = campOverride[c.id];
+      const statusChanged = wantOn !== undefined && wantOn !== metaOn;
+      const wantBudget = budgetOverride[c.id];
+      const budgetChanged = wantBudget !== undefined && wantBudget !== c.budget;
+      if (!statusChanged && !budgetChanged) return null;
+      return {
+        id: c.id,
+        name: c.name,
+        accountTh: accountMetaFor(c.account).th,
+        statusFrom: statusChanged ? metaOn : undefined,
+        statusTo: statusChanged ? wantOn : undefined,
+        budgetFrom: budgetChanged ? c.budget : undefined,
+        budgetTo: budgetChanged ? wantBudget : undefined,
+      };
+    })
+    .filter((x): x is PendingChange => x !== null);
+
+  const handleConfirmSave = async () => {
+    setSaving(true);
+    try {
+      const changes: CampaignChange[] = pendingChanges.map((c) => ({
+        id: c.id,
+        status: c.statusTo === undefined ? undefined : c.statusTo ? "ACTIVE" : "PAUSED",
+        dailyThb: c.budgetTo,
+      }));
+      const res = await applyCampaignChanges(changes);
+      setSaveResults(res);
+      // Clear only the edits that actually committed; failed ones stay staged for retry.
+      clearCampaignOverrides(res.filter((r) => r.ok).map((r) => r.id));
+      await loadCampaigns();
+      if (res.every((r) => r.ok)) {
+        closeSaveChanges();
+        setSaveResults(null);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ · save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const handleCloseSave = () => {
+    closeSaveChanges();
+    setSaveResults(null);
+  };
 
   // overlays (can open from list or detail)
   const overlays = (
@@ -323,6 +392,22 @@ export function CampaignsView() {
           onToggle={toggleCamp}
         />
       ))}
+
+      <SaveChangesBar
+        count={pendingChanges.length}
+        onSave={openSaveChanges}
+        onDiscard={discardCampaignChanges}
+      />
+
+      {saveChangesOpen && (
+        <ConfirmChangesModal
+          changes={pendingChanges}
+          saving={saving}
+          results={saveResults}
+          onConfirm={handleConfirmSave}
+          onClose={handleCloseSave}
+        />
+      )}
       {overlays}
     </div>
   );

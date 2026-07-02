@@ -130,6 +130,7 @@ export interface AppState {
   historyModal: string | null;
   campDetail: string | null;
   editModal: EditModalState | null;
+  saveChangesOpen: boolean; // review-and-confirm modal for staged campaign edits
 
   // creatives view
   selectedCreative: string;
@@ -175,6 +176,13 @@ export interface AppActions {
 
   toggleCamp: (id: string, defaultOn: boolean) => void;
   setBudgetOverride: (id: string, value: number) => void;
+  /** Open / close the review-and-confirm modal for staged campaign edits. */
+  openSaveChanges: () => void;
+  closeSaveChanges: () => void;
+  /** Drop all staged on/off + budget edits (Discard). */
+  discardCampaignChanges: () => void;
+  /** Drop staged edits for the given campaigns — used after a save commits them. */
+  clearCampaignOverrides: (ids: string[]) => void;
   setThreshold: (sku: string, key: MetricKey, value: number) => void;
   setCloseMode: (sku: string, mode: CloseMode) => void;
   setSkipMetrics: (sku: string, keys: MetricKey[]) => void;
@@ -256,6 +264,7 @@ export const initialAppState: AppState = {
   historyModal: null,
   campDetail: null,
   editModal: null,
+  saveChangesOpen: false,
   selectedCreative: "cr1",
   mediaAcc: "all",
   mediaProd: "all",
@@ -346,6 +355,21 @@ export function createAppStore(init: Partial<AppState> = {}) {
       }),
     setBudgetOverride: (id, value) =>
       set((s) => ({ budgetOverride: { ...s.budgetOverride, [id]: value } })),
+    openSaveChanges: () => set({ saveChangesOpen: true }),
+    closeSaveChanges: () => set({ saveChangesOpen: false }),
+    discardCampaignChanges: () => set({ campOverride: {}, budgetOverride: {} }),
+    clearCampaignOverrides: (ids) =>
+      set((s) => {
+        if (ids.length === 0) return {};
+        const drop = new Set(ids);
+        const campOverride = Object.fromEntries(
+          Object.entries(s.campOverride).filter(([k]) => !drop.has(k)),
+        );
+        const budgetOverride = Object.fromEntries(
+          Object.entries(s.budgetOverride).filter(([k]) => !drop.has(k)),
+        );
+        return { campOverride, budgetOverride };
+      }),
     setThreshold: (sku, key, value) =>
       set((s) => ({
         prodThr: {
