@@ -29,7 +29,9 @@ export function effThresholds(
 }
 
 /** Effective scale targets = product's stored scale overlaid with per-sku draft edits.
- *  Falls back to a value derived from the (effective) limit when a metric has none yet. */
+ *  Falls back to a value derived from the (effective) limit when a metric has none yet.
+ *  The scale KPI is deliberately NOT clamped to its limit — เป้าสเกล is set freely and
+ *  is always enabled/visible, so a scale target may sit looser or tougher than the limit. */
 export function effScaleThresholds(
   product: Product,
   prodScale: Record<string, ScaleThresholds> = {},

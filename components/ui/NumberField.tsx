@@ -8,6 +8,7 @@ interface Props {
   className?: string;
   style?: CSSProperties;
   min?: number;
+  max?: number;
   step?: number;
   placeholder?: string;
   "aria-label"?: string;
@@ -22,7 +23,7 @@ interface Props {
  * Backed by a local string so the box can hold "" and in-progress values like
  * "1." while the parent keeps a clean number.
  */
-export function NumberField({ value, onChange, min, ...rest }: Props) {
+export function NumberField({ value, onChange, min, max, ...rest }: Props) {
   const [text, setText] = useState(value ? String(value) : "");
 
   // Re-sync when the value changes from OUTSIDE (quick-set buttons, discard, load),
@@ -47,7 +48,11 @@ export function NumberField({ value, onChange, min, ...rest }: Props) {
           return;
         }
         const n = parseFloat(t);
-        if (!Number.isNaN(n)) onChange(min != null && n < min ? min : n);
+        if (!Number.isNaN(n)) {
+          const clamped =
+            min != null && n < min ? min : max != null && n > max ? max : n;
+          onChange(clamped);
+        }
       }}
       {...rest}
     />
