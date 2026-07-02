@@ -29,6 +29,7 @@ const AUTO_CLOSE_ENABLED = (process.env.META_AUTO_CLOSE ?? "off").toLowerCase() 
 
 interface MetaAccount { account_id: string; name: string; currency?: string; account_status?: number }
 interface MetaCampaign { id: string; name: string; status?: string; effective_status?: string; objective?: string; daily_budget?: string }
+interface MetaAdSet { id: string; campaign_id?: string; daily_budget?: string; effective_status?: string }
 
 export interface SyncResult {
   accounts: number;
@@ -160,6 +161,30 @@ export async function runSync(
       const delivering = insByWindow.get("last_30d")!;
       const metaById = new Map(metaRows.map((c) => [c.id, c]));
 
+      // 2b. ad-set daily budgets — the fallback when Campaign Budget Optimization
+      //     is OFF. In that case campaign.daily_budget is null and the campaign's
+      //     real งบ/วัน is the sum of its ad sets' daily_budget (what Ads Manager
+      //     shows). One extra edge call per account; archived/deleted sets skipped.
+      const adsetBudgetByCampaign = new Map<string, number>();
+      try {
+        const adsets = await graphGetAll<MetaAdSet>(
+          `/${actId}/adsets`,
+          { fields: "campaign_id,daily_budget,effective_status" },
+          token,
+        );
+        for (const s of adsets) {
+          if (!s.campaign_id || !s.daily_budget) continue;
+          const st = (s.effective_status ?? "").toUpperCase();
+          if (st === "ARCHIVED" || st === "DELETED") continue;
+          adsetBudgetByCampaign.set(
+            s.campaign_id,
+            (adsetBudgetByCampaign.get(s.campaign_id) ?? 0) + parseInt(s.daily_budget),
+          );
+        }
+      } catch (e) {
+        counts.errors.push(`adsets ${actId}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
       // 3. upsert campaigns that delivered OR are active
       const ids = new Set<string>([
         ...delivering.keys(),
@@ -190,7 +215,7 @@ export async function runSync(
           status: metaStatus,
           effectiveStatus: c?.effective_status,
           objective: c?.objective,
-          dailyBudgetMinor: c?.daily_budget ? parseInt(c.daily_budget) : 0,
+          dailyBudgetMinor: c?.daily_budget ? parseInt(c.daily_budget) : (adsetBudgetByCampaign.get(id) ?? 0),
           statusSource,
           adAccountId: account.id,
           productId,
