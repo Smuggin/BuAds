@@ -9,46 +9,73 @@ import type {
   Metrics,
   MetricKey,
   ProfileKey,
+  ScaleThresholds,
   Thresholds,
   Verdict,
 } from "@/data/types";
-import { MARKED_ROAS_MULTIPLIER, METRIC_DEFS } from "./constants";
+import { JUDGED_METRIC_KEYS, MARKED_ROAS_MULTIPLIER, METRIC_DEFS } from "./constants";
 import { fmtMetric, PERF_COLORS } from "./format";
+
+/** Where a metric sits: past its limit (bad), inside the acceptable band, or past the
+ *  tougher scale target (great). Only judged metrics can be "scale"/"breach". */
+export type MetricTier = "breach" | "ok" | "scale";
 
 export interface MetricCellResult {
   key: MetricKey;
   value: number;
   disp: string;
   ok: boolean;
-  enforced: boolean; // false when the product skips this metric (exception)
+  enforced: boolean; // false when the metric isn't judged (cpa/cost) or the product skips it
+  tier: MetricTier;
 }
 
 export interface EvalResult {
   cells: MetricCellResult[];
   breaches: number;
   passAll: boolean;
+  scaleReached: number; // # of enforced metrics that reached their scale target
   verdict: Verdict;
 }
 
 /** Judge a campaign's measured metrics against a product's thresholds. `skip`
  *  lists metrics the product excludes from judging (exceptions) — those never
- *  count as a breach, though their cells are still returned for display. */
+ *  count as a breach, though their cells are still returned for display.
+ *
+ *  `scaleThresholds` (optional) are the tougher good-direction targets. When every
+ *  judged metric reaches its scale target the verdict is `scale` (ควรสเกล); if some but
+ *  not all reach it (while all still pass their limits) the verdict is `interesting`
+ *  (น่าสนใจ). A breach on any judged limit always wins → `breach` (ควรปิด). */
 export function evalCampaign(
   metrics: Metrics,
   thresholds: Thresholds,
   skip: MetricKey[] = [],
+  scaleThresholds?: ScaleThresholds,
 ): EvalResult {
   const cells = METRIC_DEFS.map((m): MetricCellResult => {
     const value = metrics[m.key];
     const ok = m.dir === "min" ? value >= thresholds[m.key] : value <= thresholds[m.key];
-    return { key: m.key, value, disp: fmtMetric(m.key, value), ok, enforced: !skip.includes(m.key) };
+    // Only the configured KPI set (roas/ctr/cpm/cpp) is judged. cpa & Cost/วัน are
+    // shown for reference but never gate the verdict — they aren't on the Product-KPI
+    // page, so a campaign passing every visible column must not read "ควรปิด".
+    const enforced = JUDGED_METRIC_KEYS.includes(m.key) && !skip.includes(m.key);
+    const target = scaleThresholds?.[m.key];
+    const reachedScale =
+      target != null && (m.dir === "min" ? value >= target : value <= target);
+    const tier: MetricTier = !ok ? "breach" : reachedScale ? "scale" : "ok";
+    return { key: m.key, value, disp: fmtMetric(m.key, value), ok, enforced, tier };
   });
-  const breaches = cells.filter((c) => c.enforced && !c.ok).length;
+  const enforcedCells = cells.filter((c) => c.enforced);
+  const breaches = enforcedCells.filter((c) => !c.ok).length;
   const passAll = breaches === 0;
-  const marked =
-    passAll && !skip.includes("roas") && metrics.roas >= thresholds.roas * MARKED_ROAS_MULTIPLIER;
-  const verdict: Verdict = marked ? "marked" : passAll ? "running" : "breach";
-  return { cells, breaches, passAll, verdict };
+  const scaleReached = enforcedCells.filter((c) => c.tier === "scale").length;
+  const verdict: Verdict = !passAll
+    ? "breach"
+    : enforcedCells.length > 0 && scaleReached === enforcedCells.length
+      ? "scale"
+      : scaleReached > 0
+        ? "interesting"
+        : "running";
+  return { cells, breaches, passAll, scaleReached, verdict };
 }
 
 export interface VerdictMeta {
@@ -58,13 +85,15 @@ export interface VerdictMeta {
 }
 
 export function verdictMeta(verdict: Verdict): VerdictMeta {
-  if (verdict === "marked") return { label: "น่าสนใจ", icon: "★", color: PERF_COLORS.success };
+  if (verdict === "scale") return { label: "ควรสเกล", icon: "⤴", color: PERF_COLORS.success };
+  if (verdict === "interesting") return { label: "น่าสนใจ", icon: "★", color: "#c98a16" };
   if (verdict === "running") return { label: "กำลังรัน", icon: "●", color: "#6b7280" };
   return { label: "เกินเกณฑ์", icon: "⚠", color: PERF_COLORS.danger };
 }
 
 export interface CampaignState {
   shouldClose: boolean; // KPI says close, but it's still running in Meta (advisory)
+  shouldScale: boolean; // all judged metrics reached scale → candidate to scale up budget
   defaultOn: boolean;
   on: boolean;
   statusLabel: string;
@@ -89,9 +118,11 @@ export function resolveCampaignState(
   const defaultOn = metaActive;
   const on = override ?? defaultOn;
   const shouldClose = on && verdict === "breach" && advise;
+  const shouldScale = on && verdict === "scale";
   const vm = verdictMeta(verdict);
   return {
     shouldClose,
+    shouldScale,
     defaultOn,
     on,
     statusLabel: !on ? "ปิดอยู่" : shouldClose ? "ควรปิด" : vm.label,

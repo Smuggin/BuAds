@@ -15,7 +15,13 @@ import {
 } from "@/lib/api";
 import { accountMetaFor, firstSortDir } from "@/lib/constants";
 import { buildCampaignGroups, shouldCloseGroup, type CampSortKey } from "@/lib/campaigns";
-import { effBudget, effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
+import {
+  effBudget,
+  effCloseMode,
+  effScaleThresholds,
+  effSkipMetrics,
+  effThresholds,
+} from "@/lib/resolvers";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { useAppStore } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
@@ -54,6 +60,7 @@ export function CampaignsView() {
   const campSort = useAppStore((s) => s.campSort);
   const campDir = useAppStore((s) => s.campDir);
   const prodThr = useAppStore((s) => s.prodThr);
+  const prodScale = useAppStore((s) => s.prodScale);
   const closeOverride = useAppStore((s) => s.closeOverride);
   const skipOverride = useAppStore((s) => s.skipOverride);
   const budgetOverride = useAppStore((s) => s.budgetOverride);
@@ -147,7 +154,12 @@ export function CampaignsView() {
   const resolveState = (c: Campaign) => {
     const p = productBySku(c.sku);
     const thr = effThresholds(p, prodThr);
-    const ev = evalCampaign(c.metrics, thr, effSkipMetrics(p, skipOverride));
+    const ev = evalCampaign(
+      c.metrics,
+      thr,
+      effSkipMetrics(p, skipOverride),
+      effScaleThresholds(p, prodScale, prodThr),
+    );
     return resolveCampaignState(ev.verdict, effCloseMode(p, closeOverride) !== "OFF", campOverride[c.id], c.status === "ACTIVE");
   };
 
@@ -164,6 +176,7 @@ export function CampaignsView() {
     campSort,
     campDir,
     prodThr,
+    prodScale,
     closeOverride,
     skipOverride,
     budgetOverride,
@@ -300,6 +313,7 @@ export function CampaignsView() {
           campaign={c}
           product={p}
           thresholds={effThresholds(p, prodThr)}
+          scaleThresholds={effScaleThresholds(p, prodScale, prodThr)}
           skip={effSkipMetrics(p, skipOverride)}
           state={resolveState(c)}
           creatives={creatives}
@@ -320,11 +334,12 @@ export function CampaignsView() {
         <div className="min-w-[240px]">
           <div className="text-[15px] font-semibold">แคมเปญทั้งหมด · Judged by product KPI</div>
           <div className="text-[12px] text-muted-2">
-            เทียบทุกแคมเปญกับเกณฑ์ KPI ของสินค้านั้น · ★ มาร์คตัวที่ทำได้ดี · ⏸ ปิดตัวที่เกินเกณฑ์อัตโนมัติ
+            เทียบทุกแคมเปญกับเกณฑ์ KPI ของสินค้านั้น · ⤴ ตัวที่ถึงเป้าสเกล · ⚠ ตัวที่ควรปิด
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-[9px]">
-          <Chip bg="rgba(31,138,91,.2)" color="#5fd49b">★ {summary.marked} น่าสนใจ</Chip>
+          <Chip bg="rgba(31,138,91,.2)" color="#5fd49b">⤴ {summary.scale} ควรสเกล</Chip>
+          <Chip bg="rgba(201,138,22,.2)" color="#e6b24d">★ {summary.marked} น่าสนใจ</Chip>
           <Chip bg="rgba(150,156,166,.22)" color="#c4c9d1">● {summary.running} กำลังรัน</Chip>
           <Chip bg="rgba(214,69,61,.2)" color="#f0938c">⏸ {summary.closed} ปิดแล้ว</Chip>
           <Link

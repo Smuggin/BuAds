@@ -10,9 +10,17 @@ export type AccountKey = string;
 export type MetricKey = "roas" | "ctr" | "cpa" | "cpm" | "cpp" | "cpr" | "cost";
 export type MetricDir = "min" | "max";
 export type Thresholds = Record<MetricKey, number>;
+/** Tougher "scale" targets (good-direction) — only the judged KPI set is meaningful,
+ *  so this is partial. A metric reaching its scale target is doing great. */
+export type ScaleThresholds = Partial<Record<MetricKey, number>>;
 export type Metrics = Record<MetricKey, number>;
 
-export type Verdict = "marked" | "running" | "breach";
+// Verdict ladder (derived, never stored):
+//   breach      — one+ judged metric fails its limit → ควรปิด (wins over everything)
+//   scale       — every judged metric reaches its scale target → ควรสเกล
+//   interesting — passes all limits, some (not all) reach scale (mixed) → น่าสนใจ
+//   running     — passes all limits, none reach scale → กำลังรัน
+export type Verdict = "scale" | "interesting" | "running" | "breach";
 export type CreativeFormat = "Video" | "Reels" | "Carousel" | "Image";
 export type ProfileKey = "A" | "B" | "C";
 
@@ -42,6 +50,7 @@ export interface Product {
   unitCost: number;
   img: string | null;
   thresholds: Thresholds;
+  scaleThresholds: ScaleThresholds; // tougher good-direction targets → ควรสเกล when all reached
   closeMode: CloseMode;
   skipMetrics: MetricKey[]; // metrics excluded from judging (empty = all enforced)
   custom?: boolean;

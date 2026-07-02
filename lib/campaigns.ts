@@ -9,11 +9,18 @@ import type {
   CloseMode,
   MetricKey,
   Product,
+  ScaleThresholds,
   Thresholds,
 } from "@/data/types";
 import { accountMetaFor, KPI_METRIC_DEFS, METRIC_DEFS, RAMP } from "./constants";
 import { fmtMetric } from "./format";
-import { effBudget, effCloseMode, effSkipMetrics, effThresholds } from "./resolvers";
+import {
+  effBudget,
+  effCloseMode,
+  effScaleThresholds,
+  effSkipMetrics,
+  effThresholds,
+} from "./resolvers";
 import { evalCampaign, resolveCampaignState, type CampaignState, type EvalResult } from "./kpi";
 
 export type GroupBy = "product" | "account" | "none";
@@ -29,7 +36,7 @@ export interface ResolvedRow {
   state: CampaignState;
   budget: number;
   budgetChanged: boolean;
-  statusRank: number; // marked 2 · running 1 · breach 0
+  statusRank: number; // scale 3 · interesting 2 · running 1 · breach 0
   detail: string;
   prodTh: string;
   accTh: string;
@@ -43,7 +50,8 @@ export interface CampaignGroup {
   subtitle: string;
   initials: string;
   color: string;
-  marked: number;
+  scale: number; // verdict === "scale" (ควรสเกล)
+  marked: number; // verdict === "interesting" (น่าสนใจ)
   active: number; // campaigns currently ON (running)
   closed: number;
   count: number;
@@ -62,6 +70,7 @@ export interface BuildParams {
   campSort: CampSortKey;
   campDir: SortDir;
   prodThr: Record<string, Partial<Thresholds>>;
+  prodScale: Record<string, ScaleThresholds>;
   closeOverride: Record<string, CloseMode>;
   skipOverride: Record<string, MetricKey[]>;
   budgetOverride: Record<string, number>;
@@ -70,7 +79,7 @@ export interface BuildParams {
 
 export interface BuildResult {
   groups: CampaignGroup[];
-  summary: { marked: number; running: number; closed: number };
+  summary: { scale: number; marked: number; running: number; closed: number };
 }
 
 function resolveRow(c: Campaign, p: Product | null, params: BuildParams): ResolvedRow {
@@ -82,6 +91,7 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
       disp: fmtMetric(m.key, c.metrics[m.key]),
       ok: true,
       enforced: true,
+      tier: "ok" as const,
     }));
     const metaActive = c.status === "ACTIVE";
     const on = params.campOverride[c.id] ?? metaActive;
@@ -89,9 +99,10 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
       campaign: c,
       product: null,
       thresholds: null,
-      evalResult: { cells, breaches: 0, passAll: true, verdict: "running" },
+      evalResult: { cells, breaches: 0, passAll: true, scaleReached: 0, verdict: "running" },
       state: {
         shouldClose: false,
+        shouldScale: false,
         defaultOn: metaActive,
         on,
         statusLabel: on ? "ยังไม่จับคู่" : "ปิดอยู่",
@@ -109,7 +120,12 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
   }
   const thresholds = effThresholds(p, params.prodThr);
   const advise = effCloseMode(p, params.closeOverride) !== "OFF";
-  const evalResult = evalCampaign(c.metrics, thresholds, effSkipMetrics(p, params.skipOverride));
+  const evalResult = evalCampaign(
+    c.metrics,
+    thresholds,
+    effSkipMetrics(p, params.skipOverride),
+    effScaleThresholds(p, params.prodScale, params.prodThr),
+  );
   const state = resolveCampaignState(
     evalResult.verdict,
     advise,
@@ -120,13 +136,21 @@ function resolveRow(c: Campaign, p: Product | null, params: BuildParams): Resolv
   const ov = params.budgetOverride[c.id];
   const budgetChanged = ov != null && ov !== c.budget;
   const statusRank =
-    evalResult.verdict === "marked" ? 2 : evalResult.verdict === "running" ? 1 : 0;
+    evalResult.verdict === "scale"
+      ? 3
+      : evalResult.verdict === "interesting"
+        ? 2
+        : evalResult.verdict === "running"
+          ? 1
+          : 0;
   const detail =
-    evalResult.verdict === "marked"
-      ? "ROAS เกินเกณฑ์ · พร้อม Scale"
-      : evalResult.verdict === "breach"
-        ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${advise ? " · แนะนำให้ปิด" : " · รอตรวจสอบ"}`
-        : "อยู่ในเกณฑ์ที่ตั้งไว้";
+    evalResult.verdict === "scale"
+      ? "ทุกเกณฑ์ถึงเป้าสเกล · พร้อม Scale"
+      : evalResult.verdict === "interesting"
+        ? `ผ่านทุกเกณฑ์ · ถึงเป้าสเกล ${evalResult.scaleReached} รายการ`
+        : evalResult.verdict === "breach"
+          ? `เกินเกณฑ์ ${evalResult.breaches} รายการ${advise ? " · แนะนำให้ปิด" : " · รอตรวจสอบ"}`
+          : "อยู่ในเกณฑ์ที่ตั้งไว้";
   return {
     campaign: c,
     product: p,
@@ -160,9 +184,10 @@ export function buildCampaignGroups(params: BuildParams): BuildResult {
   const rows = campaigns.map((c) => resolveRow(c, bySku.get(c.sku) ?? null, params));
 
   // summary across all campaigns
-  const summary = { marked: 0, running: 0, closed: 0 };
+  const summary = { scale: 0, marked: 0, running: 0, closed: 0 };
   for (const r of rows) {
     if (!r.state.on) summary.closed++;
+    else if (r.statusRank === 3) summary.scale++;
     else if (r.statusRank === 2) summary.marked++;
     else summary.running++;
   }
@@ -220,6 +245,7 @@ function makeGroup(
   products: Product[],
   closeMode: CloseMode | null = null,
 ): CampaignGroup {
+  const scale = rows.filter((r) => r.statusRank === 3).length;
   const marked = rows.filter((r) => r.statusRank === 2).length;
   const active = rows.filter((r) => r.state.on).length;
   const closed = rows.filter((r) => !r.state.on).length;
@@ -228,7 +254,7 @@ function makeGroup(
   if (kind === "account") {
     const meta = accountMetaFor(key);
     return {
-      kind, key, marked, active, closed, count, rows,
+      kind, key, scale, marked, active, closed, count, rows,
       title: meta.th,
       subtitle: `${meta.en} · ${count} แคมเปญ`,
       initials: meta.initials,
@@ -241,7 +267,7 @@ function makeGroup(
   if (kind === "product" && product) {
     const pi = products.findIndex((p) => p.sku === product.sku);
     return {
-      kind, key, marked, active, closed, count, rows,
+      kind, key, scale, marked, active, closed, count, rows,
       title: product.th,
       subtitle: `${product.sku} · ${count} แคมเปญ`,
       initials: product.sku.slice(0, 2),
@@ -252,7 +278,7 @@ function makeGroup(
     };
   }
   return {
-    kind: "none", key, marked, active, closed, count, rows,
+    kind: "none", key, scale, marked, active, closed, count, rows,
     title: "ทุกแคมเปญ",
     subtitle: `ทุกบัญชี ทุกสินค้า · ${count} แคมเปญ`,
     initials: "∑",
@@ -271,6 +297,7 @@ function makeUnmappedGroup(rows: ResolvedRow[]): CampaignGroup {
     subtitle: `แคมเปญที่ยังไม่ได้ผูกกับสินค้า · ${rows.length} แคมเปญ`,
     initials: "?",
     color: "#9aa0a8",
+    scale: 0,
     marked: 0,
     active: rows.filter((r) => r.state.on).length,
     closed: rows.filter((r) => !r.state.on).length,
@@ -294,6 +321,7 @@ export function shouldCloseGroup(groups: CampaignGroup[]): CampaignGroup | null 
     subtitle: `แคมเปญที่เกินเกณฑ์และยังเปิดอยู่ · ${rows.length} แคมเปญ`,
     initials: "⚠",
     color: "#d6453d",
+    scale: 0,
     marked: 0,
     active: rows.length, // all "should close" rows are still running
     closed: 0,

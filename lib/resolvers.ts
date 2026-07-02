@@ -9,9 +9,10 @@ import type {
   CloseMode,
   MetricKey,
   Product,
+  ScaleThresholds,
   Thresholds,
 } from "@/data/types";
-import { METRIC_DEFS } from "./constants";
+import { deriveScaleThreshold, JUDGED_METRIC_KEYS, METRIC_DEFS } from "./constants";
 
 /** Effective thresholds = product defaults overlaid with per-sku edits. */
 export function effThresholds(
@@ -25,6 +26,23 @@ export function effThresholds(
     t[key] = o[key] ?? product.thresholds[key];
   }
   return t;
+}
+
+/** Effective scale targets = product's stored scale overlaid with per-sku draft edits.
+ *  Falls back to a value derived from the (effective) limit when a metric has none yet. */
+export function effScaleThresholds(
+  product: Product,
+  prodScale: Record<string, ScaleThresholds> = {},
+  prodThr: Record<string, Partial<Thresholds>> = {},
+): ScaleThresholds {
+  const draft = prodScale[product.sku] ?? {};
+  const base = product.scaleThresholds ?? {};
+  const limits = effThresholds(product, prodThr);
+  const out: ScaleThresholds = {};
+  for (const key of JUDGED_METRIC_KEYS) {
+    out[key] = draft[key] ?? base[key] ?? deriveScaleThreshold(key, limits[key]);
+  }
+  return out;
 }
 
 export function effCloseMode(

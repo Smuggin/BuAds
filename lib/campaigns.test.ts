@@ -13,6 +13,7 @@ const base = (over: Partial<BuildParams> = {}): BuildParams => ({
   campSort: "status",
   campDir: "desc",
   prodThr: {},
+  prodScale: {},
   closeOverride: {},
   skipOverride: {},
   budgetOverride: {},
@@ -29,9 +30,11 @@ describe("buildCampaignGroups", () => {
     }
   });
 
-  it("summary marked+running+closed equals total campaigns", () => {
+  it("summary scale+marked+running+closed equals total campaigns", () => {
     const { summary } = buildCampaignGroups(base());
-    expect(summary.marked + summary.running + summary.closed).toBe(CAMPAIGNS.length);
+    expect(summary.scale + summary.marked + summary.running + summary.closed).toBe(
+      CAMPAIGNS.length,
+    );
   });
 
   it("none grouping yields a single group with all rows", () => {

@@ -58,7 +58,7 @@ export function CampaignGroupTable({
         <div className="flex flex-wrap items-center gap-[10px]">
           <span className="num text-[11.5px] text-muted">
             <span className="font-semibold text-success">● {group.active}</span> ทำงาน
-            <span className="text-muted-2"> / {group.count}</span> · ★ {group.marked} · ⏸ {group.closed}
+            <span className="text-muted-2"> / {group.count}</span> · ⤴ {group.scale} · ★ {group.marked} · ⏸ {group.closed}
           </span>
           {group.hasAuto && group.closeMode && (
             <span
@@ -111,11 +111,13 @@ export function CampaignGroupTable({
                     ? `${r.prodTh} · ${r.accTh}`
                     : r.accTh;
               const rowBg =
-                r.statusRank === 2
-                  ? "rgba(31,138,91,.05)"
-                  : r.state.on
-                    ? "#fff"
-                    : "#fcf4f3";
+                r.statusRank === 3
+                  ? "rgba(31,138,91,.06)"
+                  : r.statusRank === 2
+                    ? "rgba(201,138,22,.05)"
+                    : r.state.on
+                      ? "#fff"
+                      : "#fcf4f3";
               return (
                 <tr
                   key={r.campaign.id}
@@ -162,10 +164,20 @@ export function CampaignGroupTable({
                   {r.evalResult.cells
                     .filter((cell) => CAMPAIGN_METRIC_DEFS.some((m) => m.key === cell.key))
                     .map((cell) => (
-                    <td key={cell.key} className="border-t border-border-2 px-[11px] py-3 text-right">
+                    <td
+                      key={cell.key}
+                      className="border-t border-border-2 px-[11px] py-3 text-right"
+                      style={{ background: cell.tier === "scale" ? "rgba(31,138,91,.06)" : undefined }}
+                    >
                       <span
                         className="num text-[12px] font-semibold"
-                        title={cell.enforced ? undefined : "ข้ามเกณฑ์นี้ · skipped (not judged)"}
+                        title={
+                          cell.enforced
+                            ? cell.tier === "scale"
+                              ? "ถึงเป้าสเกล · at scale target"
+                              : undefined
+                            : "ข้ามเกณฑ์นี้ · skipped (not judged)"
+                        }
                         style={{
                           color: r.unmapped
                             ? "#3a3f47"
@@ -177,6 +189,7 @@ export function CampaignGroupTable({
                         }}
                       >
                         {cell.disp}
+                        {cell.tier === "scale" && <span className="ml-[2px] text-[11px]">⤴</span>}
                       </span>
                     </td>
                   ))}

@@ -11,35 +11,71 @@ import { CAMPAIGNS } from "@/data/campaigns";
 import { PRODUCTS } from "@/data/products";
 import { CREATIVES } from "@/data/creatives";
 import { CREATIVE_PROFILES } from "@/data/profiles";
-import type { Metrics, Thresholds } from "@/data/types";
+import type { Metrics, ScaleThresholds, Thresholds } from "@/data/types";
 
 const bySku = (sku: string) => PRODUCTS.find((p) => p.sku === sku)!;
 const byId = (id: string) => CAMPAIGNS.find((c) => c.id === id)!;
 
+// A limit set + a tougher scale set for the 4 judged metrics.
+const THR: Thresholds = { roas: 4, ctr: 1, cpa: 100, cpm: 100, cpp: 150, cpr: 100, cost: 1000 };
+const SCALE: ScaleThresholds = { roas: 5, ctr: 2, cpm: 70, cpp: 100 };
+
 describe("evalCampaign — verdicts", () => {
-  it("marked: passes all and roas ≥ 1.2× threshold (k1 vs SRM-01)", () => {
-    const r = evalCampaign(byId("k1").metrics, bySku("SRM-01").thresholds);
-    expect(r.breaches).toBe(0);
+  it("running: passes all limits, no scale target reached", () => {
+    const m: Metrics = { roas: 4.2, ctr: 1.5, cpa: 10, cpm: 90, cpp: 140, cpr: 10, cost: 10 };
+    const r = evalCampaign(m, THR, [], SCALE);
     expect(r.passAll).toBe(true);
-    expect(r.verdict).toBe("marked"); // roas 6.8 ≥ 4.5×1.2 (5.4)
+    expect(r.scaleReached).toBe(0);
+    expect(r.verdict).toBe("running");
   });
 
-  it("running: passes all but roas < 1.2× threshold, with min boundary (k4 vs SUN-50)", () => {
-    const r = evalCampaign(byId("k4").metrics, bySku("SUN-50").thresholds);
-    expect(r.passAll).toBe(true); // ctr 1.6 === threshold 1.6 counts as ok
-    expect(r.verdict).toBe("running"); // roas 4.2 < 4.0×1.2 (4.8)
+  it("scale: every judged metric reaches its scale target → ควรสเกล", () => {
+    const m: Metrics = { roas: 6, ctr: 3, cpa: 10, cpm: 60, cpp: 90, cpr: 10, cost: 9999 };
+    const r = evalCampaign(m, THR, [], SCALE);
+    expect(r.scaleReached).toBe(4);
+    expect(r.verdict).toBe("scale");
+    // the scale-zone tier is reflected on the cell
+    expect(r.cells.find((c) => c.key === "roas")!.tier).toBe("scale");
   });
 
-  it("breach: counts every failing metric (k6 vs NGT-09 → all 6 fail)", () => {
-    const r = evalCampaign(byId("k6").metrics, bySku("NGT-09").thresholds);
-    expect(r.breaches).toBe(6); // cpr removed from the judged set (was 7)
+  it("interesting: passes all limits, some (not all) reach scale → น่าสนใจ", () => {
+    // roas & cpm reach scale; ctr & cpp only clear the limit (mixed signals)
+    const m: Metrics = { roas: 6, ctr: 1.5, cpa: 10, cpm: 60, cpp: 140, cpr: 10, cost: 10 };
+    const r = evalCampaign(m, THR, [], SCALE);
+    expect(r.passAll).toBe(true);
+    expect(r.scaleReached).toBe(2);
+    expect(r.verdict).toBe("interesting");
+  });
+
+  it("breach WINS over a scale-zone metric (ควรปิด beats น่าสนใจ)", () => {
+    // ctr breaches its limit while roas/cpm sit in the scale zone
+    const m: Metrics = { roas: 10, ctr: 0.5, cpa: 10, cpm: 60, cpp: 90, cpr: 10, cost: 10 };
+    const r = evalCampaign(m, THR, [], SCALE);
+    expect(r.breaches).toBe(1);
     expect(r.verdict).toBe("breach");
   });
 
-  it("marked requires BOTH passAll and roas≥1.2× — a high-ROAS cost breach is breach", () => {
-    const metrics: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 10, cpp: 10, cpr: 10, cost: 9999 };
-    const thr: Thresholds = { roas: 4, ctr: 1, cpa: 100, cpm: 100, cpp: 100, cpr: 100, cost: 1000 };
-    expect(evalCampaign(metrics, thr).verdict).toBe("breach");
+  it("no scaleThresholds → can only be running or breach (never scale/interesting)", () => {
+    const m: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 10, cpp: 10, cpr: 10, cost: 10 };
+    expect(evalCampaign(m, THR).verdict).toBe("running");
+  });
+
+  it("breach: counts every failing JUDGED metric (k6 vs NGT-09 → roas/ctr/cpm/cpp fail)", () => {
+    const r = evalCampaign(byId("k6").metrics, bySku("NGT-09").thresholds);
+    expect(r.breaches).toBe(4); // only the 4 configured KPIs are judged (cpa & cost are not)
+    expect(r.verdict).toBe("breach");
+  });
+
+  it("cpa & cost are reference-only: passing all 4 KPIs is NOT breach even if cpa/cost fail", () => {
+    // cpp 67 ≤ 70 (passes) while cpa & cost blow past their thresholds — must not read breach.
+    const metrics: Metrics = { roas: 5, ctr: 2, cpa: 9999, cpm: 80, cpp: 67, cpr: 40, cost: 9999 };
+    const thr: Thresholds = { roas: 4, ctr: 1, cpa: 100, cpm: 100, cpp: 70, cpr: 100, cost: 1000 };
+    const r = evalCampaign(metrics, thr);
+    expect(r.breaches).toBe(0);
+    expect(r.verdict).toBe("running"); // no scale targets passed → running (not breach)
+    expect(r.cells.find((c) => c.key === "cpa")!.enforced).toBe(false);
+    expect(r.cells.find((c) => c.key === "cost")!.enforced).toBe(false);
+    expect(r.cells.find((c) => c.key === "cpp")!.enforced).toBe(true);
   });
 
   it("editing a threshold live re-judges the same campaign", () => {
@@ -51,29 +87,28 @@ describe("evalCampaign — verdicts", () => {
 });
 
 describe("evalCampaign — skip metrics (per-product exceptions)", () => {
-  const thr: Thresholds = { roas: 4, ctr: 1, cpa: 100, cpm: 100, cpp: 100, cpr: 100, cost: 1000 };
-
-  it("a breach only on a skipped metric no longer counts (and may even mark)", () => {
-    const metrics: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 10, cpp: 10, cpr: 10, cost: 9999 };
-    expect(evalCampaign(metrics, thr).verdict).toBe("breach"); // cost fails
-    const r = evalCampaign(metrics, thr, ["cost"]);
+  it("a breach only on a skipped metric no longer counts", () => {
+    const metrics: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 9999, cpp: 10, cpr: 10, cost: 10 };
+    expect(evalCampaign(metrics, THR).verdict).toBe("breach"); // cpm fails
+    const r = evalCampaign(metrics, THR, ["cpm"]);
     expect(r.breaches).toBe(0);
-    expect(r.verdict).toBe("marked"); // rest pass + roas 10 ≥ 4×1.2
-    expect(r.cells.find((c) => c.key === "cost")!.enforced).toBe(false);
+    expect(r.verdict).toBe("running"); // rest pass, no scale targets provided
+    expect(r.cells.find((c) => c.key === "cpm")!.enforced).toBe(false);
     expect(r.cells.find((c) => c.key === "roas")!.enforced).toBe(true);
   });
 
   it("an enforced metric still breaches even when another is skipped", () => {
-    const m: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 9999, cpp: 10, cpr: 10, cost: 100 };
-    const r = evalCampaign(m, thr, ["cost"]); // cpm still enforced and fails
+    const m: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 9999, cpp: 9999, cpr: 10, cost: 100 };
+    const r = evalCampaign(m, THR, ["cpm"]); // cpp still enforced and fails
     expect(r.breaches).toBe(1);
     expect(r.verdict).toBe("breach");
   });
 
-  it("skipping ROAS prevents auto-marking (stays running)", () => {
-    const pass: Metrics = { roas: 10, ctr: 5, cpa: 10, cpm: 10, cpp: 10, cpr: 10, cost: 10 };
-    expect(evalCampaign(pass, thr).verdict).toBe("marked");
-    expect(evalCampaign(pass, thr, ["roas"]).verdict).toBe("running");
+  it("a skipped metric is dropped from the scale requirement → the rest can hit ควรสเกล", () => {
+    // cpp only clears the limit (not scale); skipping it lets the other 3 carry the campaign to scale
+    const m: Metrics = { roas: 6, ctr: 3, cpa: 10, cpm: 60, cpp: 140, cpr: 10, cost: 10 };
+    expect(evalCampaign(m, THR, [], SCALE).verdict).toBe("interesting");
+    expect(evalCampaign(m, THR, ["cpp"], SCALE).verdict).toBe("scale");
   });
 });
 
@@ -85,11 +120,25 @@ describe("resolveCampaignState — on/off mirrors Meta, KPI is advisory", () => 
     expect(s.statusLabel).toBe("ควรปิด");
   });
 
+  it("scale verdict + on → shouldScale, flagged ควรสเกล", () => {
+    const s = resolveCampaignState("scale", true, undefined, true);
+    expect(s.on).toBe(true);
+    expect(s.shouldScale).toBe(true);
+    expect(s.shouldClose).toBe(false);
+    expect(s.statusLabel).toBe("ควรสเกล");
+  });
+
+  it("interesting verdict → น่าสนใจ, not shouldScale", () => {
+    const s = resolveCampaignState("interesting", true, undefined, true);
+    expect(s.shouldScale).toBe(false);
+    expect(s.statusLabel).toBe("น่าสนใจ");
+  });
+
   it("paused in Meta → OFF (ปิดอยู่), regardless of verdict", () => {
-    const s = resolveCampaignState("marked", true, undefined, false);
+    const s = resolveCampaignState("scale", true, undefined, false);
     expect(s.defaultOn).toBe(false);
     expect(s.on).toBe(false);
-    expect(s.shouldClose).toBe(false);
+    expect(s.shouldScale).toBe(false);
     expect(s.statusLabel).toBe("ปิดอยู่");
   });
 
@@ -101,7 +150,7 @@ describe("resolveCampaignState — on/off mirrors Meta, KPI is advisory", () => 
   });
 
   it("user override wins over the Meta default", () => {
-    expect(resolveCampaignState("marked", true, false, true).on).toBe(false); // active but toggled off
+    expect(resolveCampaignState("scale", true, false, true).on).toBe(false); // active but toggled off
     expect(resolveCampaignState("breach", true, true, false).on).toBe(true); // paused but toggled on
   });
 });

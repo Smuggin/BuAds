@@ -15,8 +15,17 @@ const THR_COLUMN: Record<MetricKey, string> = {
   cost: "thrCost",
 };
 
+// Only the judged KPI set carries a scale target.
+const SCALE_COLUMN: Partial<Record<MetricKey, string>> = {
+  roas: "scaleRoas",
+  ctr: "scaleCtr",
+  cpm: "scaleCpm",
+  cpp: "scaleCpp",
+};
+
 type PatchBody = {
   thresholds?: Partial<Record<MetricKey, number>>;
+  scaleThresholds?: Partial<Record<MetricKey, number>>;
   closeMode?: CloseMode;
   skipMetrics?: MetricKey[];
   th?: string;
@@ -48,6 +57,14 @@ export async function PATCH(
     for (const [k, v] of Object.entries(body.thresholds)) {
       data[THR_COLUMN[k as MetricKey]] = v as number;
       details.push(`${k.toUpperCase()} → ${v}`);
+    }
+  }
+  if (body.scaleThresholds) {
+    for (const [k, v] of Object.entries(body.scaleThresholds)) {
+      const col = SCALE_COLUMN[k as MetricKey];
+      if (!col) continue;
+      data[col] = v as number;
+      details.push(`${k.toUpperCase()} สเกล → ${v}`);
     }
   }
   if (body.closeMode && ["OFF", "SUGGEST", "AUTO"].includes(body.closeMode)) {

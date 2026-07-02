@@ -20,6 +20,7 @@ export function CreativesView() {
   const mediaProd = useAppStore((s) => s.mediaProd);
   const selectedCreative = useAppStore((s) => s.selectedCreative);
   const prodThr = useAppStore((s) => s.prodThr);
+  const prodScale = useAppStore((s) => s.prodScale);
   const closeOverride = useAppStore((s) => s.closeOverride);
   const skipOverride = useAppStore((s) => s.skipOverride);
   const selectCreative = useAppStore((s) => s.selectCreative);
@@ -145,6 +146,7 @@ export function CreativesView() {
           products={products}
           campaigns={campaigns}
           prodThr={prodThr}
+          prodScale={prodScale}
           closeOverride={closeOverride}
           skipOverride={skipOverride}
         />
