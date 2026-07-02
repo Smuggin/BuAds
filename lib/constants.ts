@@ -8,6 +8,8 @@ import type {
   CreativeFormat,
   LogType,
   MetricDef,
+  MetricDir,
+  MetricKey,
 } from "@/data/types";
 
 export interface NavItem {
@@ -109,6 +111,12 @@ export const KPI_METRIC_DEFS: MetricDef[] = METRIC_DEFS.filter(
   (m) => m.key !== "cpa" && m.key !== "cost",
 );
 
+/** The metric keys the engine actually JUDGES (gates verdict / auto-close). Kept in
+ *  lock-step with the configurable set: what the team can't see or tune on the
+ *  Product-KPI page must not silently force a campaign to "ควรปิด". cpa & Cost/วัน are
+ *  therefore reference-only — their cells still render, but never count as a breach. */
+export const JUDGED_METRIC_KEYS: MetricKey[] = KPI_METRIC_DEFS.map((m) => m.key);
+
 /** Categorical ramp (avatars, spend-share, charts). DESIGN §2. */
 export const RAMP = [
   "#16181d",
@@ -131,6 +139,25 @@ export const DEFAULT_THRESHOLDS = {
   cpr: 60,
   cost: 1000,
 } as const;
+
+/** How far the default scale target sits past the limit, per direction. min-metrics
+ *  (roas/ctr) want higher → ×1.3; max-metrics (cpm/cpp cost) want lower → ×0.75. */
+export const SCALE_MULTIPLIER: Record<MetricDir, number> = { min: 1.3, max: 0.75 };
+
+/** Derive a sensible default scale target from a metric's limit — used to seed products
+ *  that have no explicit scale value yet (existing rows / new products). Rounded to a
+ *  clean step (฿→nearest 5, ratios→nearest 0.1) so it reads well in the UI. */
+export function deriveScaleThreshold(key: MetricKey, limit: number): number {
+  const m = METRIC_DEFS.find((d) => d.key === key);
+  const dir: MetricDir = m?.dir ?? "min";
+  const raw = limit * SCALE_MULTIPLIER[dir];
+  return m?.money ? Math.max(0, Math.round(raw / 5) * 5) : Math.round(raw * 10) / 10;
+}
+
+/** Default scale targets for the judged KPI set, derived from DEFAULT_THRESHOLDS. */
+export const DEFAULT_SCALE_THRESHOLDS: Partial<Record<MetricKey, number>> = Object.fromEntries(
+  JUDGED_METRIC_KEYS.map((k) => [k, deriveScaleThreshold(k, DEFAULT_THRESHOLDS[k])]),
+);
 
 /** Creative format → thumb icon + color (DESIGN §4.3). */
 export const FORMAT_META: Record<CreativeFormat, { icon: string; color: string }> = {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { DEFAULT_THRESHOLDS } from "@/lib/constants";
+import { deriveScaleThreshold, DEFAULT_THRESHOLDS } from "@/lib/constants";
 import { regroupUnmapped } from "@/lib/meta/regroup";
 import type { AccountKey, CloseMode, MetricKey, Product, Thresholds } from "@/data/types";
 import { requireAuth } from "@/lib/auth/guard";
@@ -46,6 +46,13 @@ export async function GET() {
         cpr: p.thrCpr,
         cost: p.thrCost,
       },
+      // Scale targets fall back to a derived value while a metric has no explicit one.
+      scaleThresholds: {
+        roas: p.scaleRoas ?? deriveScaleThreshold("roas", p.thrRoas),
+        ctr: p.scaleCtr ?? deriveScaleThreshold("ctr", p.thrCtr),
+        cpm: p.scaleCpm ?? deriveScaleThreshold("cpm", p.thrCpm),
+        cpp: p.scaleCpp ?? deriveScaleThreshold("cpp", p.thrCpp),
+      },
     }));
   return NextResponse.json(products);
 }
@@ -60,6 +67,7 @@ type CreateBody = {
   closeMode?: CloseMode;
   skipMetrics?: MetricKey[];
   thresholds?: Partial<Thresholds>;
+  scaleThresholds?: Partial<Record<MetricKey, number>>;
 };
 
 /** Create a new product (+ category if needed, thresholds, account links). */
@@ -84,6 +92,7 @@ export async function POST(req: Request) {
   category ??= await prisma.category.create({ data: { name: catName } });
 
   const thr: Thresholds = { ...DEFAULT_THRESHOLDS, ...body.thresholds };
+  const scale = body.scaleThresholds ?? {};
   const accountKeys = body.accounts ?? [];
   const accounts = accountKeys.length
     ? await prisma.adAccount.findMany({ where: { metaAccountId: { in: accountKeys } } })
@@ -106,6 +115,10 @@ export async function POST(req: Request) {
       thrCpp: thr.cpp,
       thrCpr: thr.cpr,
       thrCost: thr.cost,
+      scaleRoas: scale.roas ?? deriveScaleThreshold("roas", thr.roas),
+      scaleCtr: scale.ctr ?? deriveScaleThreshold("ctr", thr.ctr),
+      scaleCpm: scale.cpm ?? deriveScaleThreshold("cpm", thr.cpm),
+      scaleCpp: scale.cpp ?? deriveScaleThreshold("cpp", thr.cpp),
       accounts: { create: accounts.map((a) => ({ adAccountId: a.id })) },
     },
   });

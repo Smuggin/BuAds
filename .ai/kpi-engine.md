@@ -23,34 +23,52 @@ Distilled from `reference/AdsHub.prototype.dc.html` (`evalCamp`, `buildCampRow`,
 `min` ⇒ higher is better, threshold renders `≥`. `max` ⇒ lower is better, renders `≤`.
 Define this table once as `METRIC_DEFS`; everything iterates it.
 
-## 1. `evalCampaign(campaign, thresholds)`
+## 1. `evalCampaign(campaign, thresholds, skip, scaleThresholds)`
 
-Per-metric judgement + verdict.
+Per-metric judgement + verdict. **Only the judged KPI set** (`JUDGED_METRIC_KEYS` =
+roas/ctr/cpm/cpp — same as `KPI_METRIC_DEFS`) gates the verdict. `cpa` & `Cost/วัน` get
+cells for display but are **never enforced** (reference-only). `scaleThresholds` are the
+tougher good-direction targets per judged metric (partial; a value reached = doing great).
 
 ```
 for each metric m in METRIC_DEFS:
-  value = campaign.metrics[m.key]
-  ok    = m.dir === 'min' ? value >= thresholds[m.key]
-                          : value <= thresholds[m.key]
-  cell  = { key: m.key, value, disp: fmtMetric(m.key, value), ok }
+  value    = campaign.metrics[m.key]
+  ok       = m.dir === 'min' ? value >= thresholds[m.key]
+                             : value <= thresholds[m.key]
+  enforced = JUDGED_METRIC_KEYS.includes(m.key) && !skip.includes(m.key)
+  target   = scaleThresholds?.[m.key]
+  reachedScale = target != null &&
+                 (m.dir === 'min' ? value >= target : value <= target)
+  tier     = !ok ? 'breach' : reachedScale ? 'scale' : 'ok'
+  cell     = { key, value, disp, ok, enforced, tier }
 
-breaches = count of cells where !ok
-passAll  = breaches === 0
-marked   = passAll && campaign.metrics.roas >= thresholds.roas * 1.2
-verdict  = marked  ? 'marked'
-         : passAll ? 'running'
-         :           'breach'
+enforcedCells = cells where enforced
+breaches      = count of enforcedCells where !ok
+passAll       = breaches === 0
+scaleReached  = count of enforcedCells where tier === 'scale'
+verdict = !passAll                                   ? 'breach'       // ควรปิด — wins
+        : scaleReached === enforcedCells.length > 0  ? 'scale'        // ควรสเกล — all reach scale
+        : scaleReached > 0                           ? 'interesting'  // น่าสนใจ — mixed
+        :                                              'running'      // กำลังรัน
 
-return { cells, breaches, passAll, verdict }
+return { cells, breaches, passAll, scaleReached, verdict }
 ```
 
-`Verdict = 'marked' | 'running' | 'breach'`. The `1.2×` ROAS multiplier for `marked`
-is exact — keep it a named constant `MARKED_ROAS_MULTIPLIER = 1.2`.
+`Verdict = 'scale' | 'interesting' | 'running' | 'breach'`. **A breach on any judged
+limit always wins over a scale-zone metric** (ควรปิด beats น่าสนใจ). `scale` requires
+*every* enforced metric to reach its target; some-but-not-all → `interesting`. With no
+`scaleThresholds` the verdict can only be `running`/`breach`. (The old `MARKED_ROAS_MULTIPLIER
+= 1.2` rule is retired for campaigns; it survives only in **creative** ranking, §3.)
+
+Scale targets are per-product & per-metric (`Product.scaleThresholds`, `effScaleThresholds`),
+editable in the Product-KPI page's expandable "เป้าสเกล" panel; a metric with no explicit
+value falls back to `deriveScaleThreshold(limit)` (min ×1.3, max ×0.75).
 
 **verdictMeta** (label/icon/color for chips):
-- `marked`  → `{ label: 'น่าสนใจ', icon: '★', color: success #1f8a5b }`
-- `running` → `{ label: 'กำลังรัน', icon: '●', color: slate #6b7280 }`
-- `breach`  → `{ label: 'เกินเกณฑ์', icon: '⚠', color: danger #d6453d }`
+- `scale`       → `{ label: 'ควรสเกล', icon: '⤴', color: success #1f8a5b }`
+- `interesting` → `{ label: 'น่าสนใจ', icon: '★', color: warn #c98a16 }`
+- `running`     → `{ label: 'กำลังรัน', icon: '●', color: slate #6b7280 }`
+- `breach`      → `{ label: 'เกินเกณฑ์', icon: '⚠', color: danger #d6453d }`
 
 ## 2. Auto-close & on/off resolution
 
@@ -67,7 +85,8 @@ on         = campOverride[campaign.id] ?? defaultOn // user toggle wins
 - When `closedAuto`, the status chip reads **"ปิดอัตโนมัติ"** in `danger`, and the row is dimmed.
 - A user toggling on/off writes `campOverride[id]` — an explicit override of the derived default.
 - A breaching campaign whose product has auto-close **off** stays running but flagged (`breach` chip).
-- Row detail copy: marked → `ROAS เกินเกณฑ์ · พร้อม Scale`; breach → `เกินเกณฑ์ {n} รายการ` + (`· ปิดให้แล้ว` if auto else `· รอตรวจสอบ`); running → `อยู่ในเกณฑ์ที่ตั้งไว้`.
+- Row detail copy: scale → `ทุกเกณฑ์ถึงเป้าสเกล · พร้อม Scale`; interesting → `ผ่านทุกเกณฑ์ · ถึงเป้าสเกล {n} รายการ`; breach → `เกินเกณฑ์ {n} รายการ` + (`· แนะนำให้ปิด` if advise else `· รอตรวจสอบ`); running → `อยู่ในเกณฑ์ที่ตั้งไว้`.
+- `resolveCampaignState` also derives `shouldScale = on && verdict === 'scale'` (advisory candidate to raise budget), alongside `shouldClose = on && verdict === 'breach' && advise`.
 
 `effThresholds(product)` = for each metric, `prodThr[sku][key] ?? product.thresholds[key]`.
 `effAutoClose(product)` = `autoOverride[sku] ?? product.autoClose`.
@@ -169,16 +188,16 @@ coloring collapse to `ink`.
 ## 7. Aggregations for headers/summaries
 
 - **Campaign summary** (banner chips): count campaigns by resolved state — `closed` (`!on`),
-  else `marked` (verdict marked), else `running`.
-- **Group score** (for "performance" group sort): mean of per-row rank, where
-  `rank = marked ? 2 : running ? 1 : 0`. Group sort asc/desc on score, or by group name.
-- **Group `★ / ⏸` counts**: marked count and closed (`!on`) count per group.
+  else by verdict `scale` / `interesting` (marked) / `running`.
+- **Group score** (for "performance" group sort): mean of per-row `statusRank`, where
+  `rank = scale ? 3 : interesting ? 2 : running ? 1 : 0`. Group sort asc/desc, or by name.
+- **Group `⤴ / ★ / ⏸` counts**: scale count, interesting count, closed (`!on`) count per group.
 
 ## What to unit-test (`lib/kpi.test.ts`)
 
 Required coverage (AGENTS.md build order step 2):
-1. `evalCampaign`: a clear `marked` (passes all, roas ≥ 1.2× thr), a `running` (passes, roas < 1.2×), a `breach` (≥1 metric fails); correct `breaches` count; `min` vs `max` boundary (`value === threshold` ⇒ ok).
-2. `marked` requires **both** passAll **and** `roas ≥ thr.roas*1.2` (a high-ROAS campaign that breaches another metric is `breach`, not `marked`).
+1. `evalCampaign` verdicts: `running` (passes limits, no scale reached), `scale` (all judged reach scale), `interesting` (mixed — some reach scale), `breach` (≥1 judged limit fails); correct `breaches`/`scaleReached`; `min` vs `max` boundary (`value === threshold` ⇒ ok); cpa & cost never enforced.
+2. A judged **breach wins** over a scale-zone metric (ควรปิด beats น่าสนใจ); `scale` needs *every* enforced metric to reach its target; skipping a metric drops it from both the breach and scale requirements.
 3. Auto-close resolution: breach + autoClose ⇒ `defaultOn=false`; breach + no autoClose ⇒ running-but-flagged; `campOverride` flips the resolved `on`.
 4. Threshold edit re-judges: same campaign flips verdict when a threshold crosses its value.
 5. Creative ranking: ROAS-desc order, 3-metric pass/strong/poor verdicts, `defaultOn` for poor, `openCount`.

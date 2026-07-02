@@ -11,7 +11,14 @@ import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
 import { AudienceBreakdown } from "@/components/charts/AudienceBreakdown";
 import { CreativePlayer } from "@/components/creatives/CreativePlayer";
-import type { Campaign, Creative, MetricKey, Product, Thresholds } from "@/data/types";
+import type {
+  Campaign,
+  Creative,
+  MetricKey,
+  Product,
+  ScaleThresholds,
+  Thresholds,
+} from "@/data/types";
 
 const VERDICT_META: Record<CreativeVerdict, { label: string; color: string }> = {
   marked: { label: "ดีเด่น · พร้อม Scale", color: "#1f8a5b" },
@@ -23,6 +30,7 @@ interface Props {
   campaign: Campaign;
   product: Product;
   thresholds: Thresholds;
+  scaleThresholds: ScaleThresholds;
   skip: MetricKey[];
   state: CampaignState;
   creatives: Creative[];
@@ -36,6 +44,7 @@ export function CampaignDetail({
   campaign,
   product,
   thresholds,
+  scaleThresholds,
   skip,
   state,
   creatives,
@@ -47,7 +56,7 @@ export function CampaignDetail({
   const pc = usePerfColor();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const acc = accountMetaFor(campaign.account);
-  const ev = evalCampaign(campaign.metrics, thresholds, skip);
+  const ev = evalCampaign(campaign.metrics, thresholds, skip, scaleThresholds);
   const campCreatives = creatives.filter((c) => c.campaigns.includes(campaign.id));
   const { ranked, openCount } = rankCreatives(campCreatives, thresholds, creativeOpen);
   const profile = aggregateProfile(
@@ -100,12 +109,14 @@ export function CampaignDetail({
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2 sm:grid-cols-3 lg:grid-cols-6">
           {METRIC_DEFS.map((m, i) => {
             const cell = ev.cells[i];
+            const scaleTarget = scaleThresholds[m.key];
+            const atScale = cell.tier === "scale";
             return (
               <div
                 key={m.key}
                 className="bg-card px-3 py-[11px]"
                 title={cell.enforced ? undefined : "ข้ามเกณฑ์นี้ · skipped (not judged)"}
-                style={{ opacity: cell.enforced ? 1 : 0.45 }}
+                style={{ opacity: cell.enforced ? 1 : 0.45, background: atScale ? "rgba(31,138,91,.06)" : undefined }}
               >
                 <div className="text-[10px] uppercase tracking-[0.03em] text-muted-2">{m.short}</div>
                 <div
@@ -115,10 +126,14 @@ export function CampaignDetail({
                   }}
                 >
                   {cell.disp}
+                  {atScale && <span className="ml-1 text-[12px]" title="ถึงเป้าสเกล · at scale target">⤴</span>}
                 </div>
                 <div className="num text-[10px] text-[#b7bcc4]">
                   {dirSymbol(m.dir)}
                   {fmtMetric(m.key, thresholds[m.key])}
+                  {cell.enforced && scaleTarget != null && (
+                    <span className="text-success/80"> · ⤴{fmtMetric(m.key, scaleTarget)}</span>
+                  )}
                 </div>
               </div>
             );

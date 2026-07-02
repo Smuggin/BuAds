@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type DragEvent } from "react";
 import { getProducts, patchProduct, reorderProducts } from "@/lib/api";
-import { KPI_METRIC_DEFS, METRIC_DEFS, RAMP } from "@/lib/constants";
+import { deriveScaleThreshold, KPI_METRIC_DEFS, METRIC_DEFS, RAMP } from "@/lib/constants";
 import { NumberField } from "@/components/ui/NumberField";
 import { SaveChangesBar } from "@/components/ui/SaveChangesBar";
-import { effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
+import { effCloseMode, effScaleThresholds, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { dirSymbol } from "@/lib/format";
 import { useAppStore } from "@/store/AppProvider";
 import { Banner } from "@/components/ui/Banner";
@@ -39,19 +39,27 @@ interface ProductChange {
   sku: string;
   name: string;
   thresholds: { key: MetricKey; from: number; to: number }[];
+  scale: { key: MetricKey; from: number; to: number }[];
   skip?: { from: MetricKey[]; to: MetricKey[] };
   close?: { from: CloseMode; to: CloseMode };
 }
+
+/** Base scale target for a metric = the product's stored value, else derived from its limit. */
+const baseScaleVal = (p: Product, key: MetricKey) =>
+  p.scaleThresholds?.[key] ?? deriveScaleThreshold(key, p.thresholds[key]);
 
 export function ProductKpiView() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dragSku, setDragSku] = useState<string | null>(null);
+  const [expandedSku, setExpandedSku] = useState<string | null>(null);
   const prodThr = useAppStore((s) => s.prodThr);
+  const prodScale = useAppStore((s) => s.prodScale);
   const closeOverride = useAppStore((s) => s.closeOverride);
   const skipOverride = useAppStore((s) => s.skipOverride);
   const setThreshold = useAppStore((s) => s.setThreshold);
+  const setScaleThreshold = useAppStore((s) => s.setScaleThreshold);
   const setCloseMode = useAppStore((s) => s.setCloseMode);
   const setSkipMetrics = useAppStore((s) => s.setSkipMetrics);
   const clearKpiDrafts = useAppStore((s) => s.clearKpiDrafts);
@@ -79,6 +87,11 @@ export function ProductKpiView() {
         .filter((k) => effThr[k] !== p.thresholds[k])
         .map((k) => ({ key: k, from: p.thresholds[k], to: effThr[k] }));
 
+      const draftScale = prodScale[p.sku] ?? {};
+      const scaleDiffs = kpiKeys
+        .filter((k) => draftScale[k] != null && draftScale[k] !== baseScaleVal(p, k))
+        .map((k) => ({ key: k, from: baseScaleVal(p, k), to: draftScale[k] as number }));
+
       const effSkip = effSkipMetrics(p, skipOverride);
       const baseSkip = p.skipMetrics ?? [];
       const skipChanged =
@@ -87,18 +100,19 @@ export function ProductKpiView() {
       const effClose = effCloseMode(p, closeOverride);
       const closeChanged = effClose !== p.closeMode;
 
-      if (thrDiffs.length || skipChanged || closeChanged) {
+      if (thrDiffs.length || scaleDiffs.length || skipChanged || closeChanged) {
         out.push({
           sku: p.sku,
           name: p.th,
           thresholds: thrDiffs,
+          scale: scaleDiffs,
           skip: skipChanged ? { from: baseSkip, to: effSkip } : undefined,
           close: closeChanged ? { from: p.closeMode, to: effClose } : undefined,
         });
       }
     }
     return out;
-  }, [products, prodThr, skipOverride, closeOverride]);
+  }, [products, prodThr, prodScale, skipOverride, closeOverride]);
 
   const onSave = async () => {
     setSaving(true);
@@ -106,11 +120,15 @@ export function ProductKpiView() {
       for (const c of changes) {
         const patch: {
           thresholds?: Partial<Record<MetricKey, number>>;
+          scaleThresholds?: Partial<Record<MetricKey, number>>;
           skipMetrics?: MetricKey[];
           closeMode?: CloseMode;
         } = {};
         if (c.thresholds.length) {
           patch.thresholds = Object.fromEntries(c.thresholds.map((d) => [d.key, d.to]));
+        }
+        if (c.scale.length) {
+          patch.scaleThresholds = Object.fromEntries(c.scale.map((d) => [d.key, d.to]));
         }
         if (c.skip) patch.skipMetrics = c.skip.to;
         if (c.close) patch.closeMode = c.close.to;
@@ -197,11 +215,16 @@ export function ProductKpiView() {
             <tbody>
               {products?.map((p, pi) => {
                 const thr = effThresholds(p, prodThr);
+                const scale = effScaleThresholds(p, prodScale, prodThr);
                 const mode = effCloseMode(p, closeOverride);
                 const skip = effSkipMetrics(p, skipOverride);
+                const expanded = expandedSku === p.sku;
+                const scaleDirty = kpiKeys.some(
+                  (k) => (prodScale[p.sku]?.[k] ?? null) != null && prodScale[p.sku]![k] !== baseScaleVal(p, k),
+                );
                 return (
+                  <Fragment key={p.sku}>
                   <tr
-                    key={p.sku}
                     onDragOver={(e) => onDragOverRow(e, p.sku)}
                     onDrop={onDropRow}
                     className="border-t border-border-2 transition-opacity"
@@ -230,6 +253,16 @@ export function ProductKpiView() {
                         <div className="leading-[1.2]">
                           <div className="font-semibold text-ink">{p.th}</div>
                           <div className="num text-[11px] text-muted-2">{p.sku}</div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSku(expanded ? null : p.sku)}
+                            aria-expanded={expanded}
+                            title="เป้าสเกล · Scale targets"
+                            className="mt-[3px] inline-flex items-center gap-[3px] rounded-[6px] px-[5px] py-[1px] text-[10.5px] font-semibold text-accent hover:bg-[#eef1f6]"
+                          >
+                            <span className="text-[9px]">{expanded ? "▾" : "▸"}</span> เป้าสเกล
+                            {scaleDirty && <span className="ml-[2px] h-[5px] w-[5px] rounded-full bg-warn" />}
+                          </button>
                         </div>
                       </div>
                     </td>
@@ -275,6 +308,54 @@ export function ProductKpiView() {
                       </div>
                     </td>
                   </tr>
+
+                  {expanded && (
+                    <tr className="border-t border-border-2 bg-field-bg">
+                      <td />
+                      <td colSpan={KPI_METRICS.length + 1} className="px-5 py-4">
+                        <div className="mb-[10px] flex items-baseline gap-2">
+                          <span className="text-[12.5px] font-semibold text-ink">เป้าสเกล · Scale when reached</span>
+                          <span className="text-[11px] text-muted-2">
+                            ถึงเป้าทุกตัว = <span className="font-semibold text-success">ควรสเกล</span> · ถึงบางตัว = <span className="font-semibold text-warn">น่าสนใจ</span>
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-x-6 gap-y-[10px] sm:grid-cols-2">
+                          {KPI_METRICS.map((m) => {
+                            const key = m.key as MetricKey;
+                            const enforced = !skip.includes(key);
+                            return (
+                              <div
+                                key={m.key}
+                                className="flex items-center justify-between gap-3 rounded-[9px] border border-border-2 bg-card px-3 py-[9px]"
+                                style={{ opacity: enforced ? 1 : 0.4 }}
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-[12px] font-semibold text-ink">
+                                    {META_LABEL[key] ?? m.short}
+                                  </div>
+                                  <div className="num text-[11px] text-muted-2">
+                                    เกณฑ์ {dirSymbol(m.dir)}{fmtVal(key, thr[key])}
+                                    {!enforced && " · ข้าม"}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-[6px] whitespace-nowrap">
+                                  <span className="num text-[11px] text-faint">{dirSymbol(m.dir)}</span>
+                                  <ThresholdInput
+                                    money={m.money}
+                                    suffix={m.suffix}
+                                    value={scale[key] ?? baseScaleVal(p, key)}
+                                    onChange={(v) => setScaleThreshold(p.sku, key, v)}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td />
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -317,6 +398,13 @@ export function ProductKpiView() {
                       {c.thresholds.map((d) => (
                         <div key={d.key} className="num">
                           {META_LABEL[d.key] ?? d.key.toUpperCase()}:{" "}
+                          <span className="text-muted-2">{fmtVal(d.key, d.from)}</span> →{" "}
+                          <span className="font-semibold text-ink">{fmtVal(d.key, d.to)}</span>
+                        </div>
+                      ))}
+                      {c.scale.map((d) => (
+                        <div key={`scale-${d.key}`} className="num">
+                          <span className="text-success">⤴</span> {META_LABEL[d.key] ?? d.key.toUpperCase()} สเกล:{" "}
                           <span className="text-muted-2">{fmtVal(d.key, d.from)}</span> →{" "}
                           <span className="font-semibold text-ink">{fmtVal(d.key, d.to)}</span>
                         </div>

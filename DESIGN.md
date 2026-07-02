@@ -102,11 +102,11 @@ Left sidebar (dark `#16181d`, 236px, sticky full‑height) + sticky translucent 
 - Ad‑accounts table: avatar+name+platform, Spend, Revenue, ROAS (perf‑colored), Purchases, CPA, CTR, Status chip (Active/Paused). "+ เชื่อมบัญชี" CTA.
 
 ### 4.2 Campaigns
-- Dark intro banner with summary chips: ★ marked / ● running / ⏸ closed; CTA to Product KPI.
+- Dark intro banner with summary chips: ⤴ ควรสเกล / ★ น่าสนใจ / ● กำลังรัน / ⏸ ปิดแล้ว; CTA to Product KPI.
 - **Controls bar:** มุมมอง (group by **product / account / none**), เรียงกลุ่ม (group sort: performance / name + asc/desc).
 - **Grouped tables** (one card per group). Group header: avatar, title, subtitle, ★/⏸ counts, auto‑close chip (product groups only).
 - Table columns: campaign (with status icon, history ◷ button, name is a button → opens detail), the 7 metric columns showing value vs the product threshold (`≥`/`≤` label), each cell **green if pass / red if breach**; สถานะ; **budget** (click amount/pencil → budget modal); เปิด/ปิด toggle. **Every column header is click‑to‑sort** (name, all 7 metrics, status, open/close) with ↑/↓ and a faint ⇅ hint; first click sorts "best first" per metric.
-- **Auto‑mark / auto‑close engine:** a campaign passing all metrics + ROAS ≥ 1.2× threshold → "marked" (★). Breaching → if that product's auto‑close is on, it's toggled off + dimmed ("ปิดอัตโนมัติ"); else flagged but left running.
+- **Verdict engine (4 tiers):** each judged metric (ROAS/CTR/CPM/CPP) has a **limit** and a tougher **scale target**. Passing all limits + *every* metric reaching its scale target → **ควรสเกล** (⤴). Passing all limits with *some* metrics at scale (mixed) → **น่าสนใจ** (★). Any limit breach → **ควรปิด** (⚠, wins over everything); if the product's close policy is on, flagged to close. Scale‑zone cells get a green tint + ⤴ marker.
 - **Budget modal:** confirmation dialog showing current budget, draft, diff, % change, before/after; quick‑increase buttons **25% / 50% / 75% / 100%**; confirm/cancel.
 - **In‑page campaign detail** (no route change; state‑swapped on the same page): back button; header (name/product/account/status/budget‑adjust); 7‑metric breakdown vs thresholds (green/red); **creatives ranked best‑ROAS‑first** each judged (ดีเด่น/ผ่านเกณฑ์/ต่ำกว่าเกณฑ์) with **open/close toggle** ("เปิดอยู่ X/Y"); audience breakdown (age/gender/province/day×time) aggregated spend‑weighted across the campaign's creatives.
 
@@ -163,7 +163,7 @@ Left sidebar (dark `#16181d`, 236px, sticky full‑height) + sticky translucent 
 `roas` (≥), `ctr` (≥), `cpa` (≤), `cpm` (≤), `cpp` cost/purchase (≤), `cpr` cost/result (≤), `cost` daily cost (≤). Money metrics render `฿` + grouped thousands; roas as `x`, ctr as `%`.
 
 ### Core derived logic
-- **Campaign verdict**: per metric `ok = dir==='min' ? value>=threshold : value<=threshold`. `passAll = no breaches`. `marked = passAll && roas >= threshold*1.2`. Else `running` (pass) or `breach`.
+- **Campaign verdict** (only ROAS/CTR/CPM/CPP judged): per metric `ok = dir==='min' ? value>=limit : value<=limit`; `tier = !ok ? 'breach' : reachedScale ? 'scale' : 'ok'`. `passAll = no breaches`. Verdict: any breach → `breach`; all reach scale → `scale`; some reach scale → `interesting`; else `running`. Breach always wins. See `.ai/kpi-engine.md §1`.
 - **Auto‑close**: `breach && product.autoClose` ⇒ default off + "ปิดอัตโนมัติ".
 - **Creative rank**: sort by ROAS desc within a campaign; verdict marked/ok/poor; poor defaults to off.
 

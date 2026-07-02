@@ -152,6 +152,12 @@ model Product {
   thrCpp     Int
   thrCpr     Int
   thrCost    Int
+  // Tougher "scale" targets for the judged KPI set (roas/ctr/cpm/cpp). Nullable:
+  // existing rows fall back to a value derived from the limit at read time.
+  scaleRoas  Float?
+  scaleCtr   Float?
+  scaleCpm   Int?
+  scaleCpp   Int?
   accounts   ProductAccount[]
   campaigns  Campaign[]
   creatives  Creative[]

@@ -13,6 +13,7 @@ import type {
   CloseMode,
   MetricKey,
   Product,
+  ScaleThresholds,
   Thresholds,
 } from "@/data/types";
 
@@ -122,6 +123,7 @@ export interface AppState {
   campOverride: Record<string, boolean>;
   budgetOverride: Record<string, number>;
   prodThr: Record<string, Partial<Thresholds>>;
+  prodScale: Record<string, ScaleThresholds>;
   closeOverride: Record<string, CloseMode>;
   skipOverride: Record<string, MetricKey[]>;
   creativeOpen: Record<string, boolean>;
@@ -187,6 +189,7 @@ export interface AppActions {
   /** Drop staged edits for the given campaigns — used after a save commits them. */
   clearCampaignOverrides: (ids: string[]) => void;
   setThreshold: (sku: string, key: MetricKey, value: number) => void;
+  setScaleThreshold: (sku: string, key: MetricKey, value: number) => void;
   setCloseMode: (sku: string, mode: CloseMode) => void;
   setSkipMetrics: (sku: string, keys: MetricKey[]) => void;
   /** Drop all Product-KPI drafts (thresholds / skip / close) — after a save persists them. */
@@ -259,6 +262,7 @@ export const initialAppState: AppState = {
   campOverride: {},
   budgetOverride: {},
   prodThr: {},
+  prodScale: {},
   closeOverride: {},
   skipOverride: {},
   creativeOpen: {},
@@ -313,14 +317,16 @@ export function createAppStore(init: Partial<AppState> = {}) {
         set({ range, customRange: null });
         return;
       }
-      if (get().syncProgress) return; // a sync is already running
       const c = range === "custom" ? custom ?? null : null;
+      // Cache-first: flip the view immediately so the last cached snapshot for this
+      // range renders while a fresh sync runs in the background — never block the UI
+      // on a live Meta call. rangeSyncTick bumps on completion to pull the new data.
+      set({ range, customRange: c });
+      if (get().syncProgress) return; // a sync is already running
       set({ syncProgress: { pct: 0, stage: "เริ่มซิงค์ · Starting…" } });
       try {
         await streamRangeSync(range, c, (p) => set({ syncProgress: p }));
         set((s) => ({
-          range,
-          customRange: c,
           rangeSyncTick: s.rangeSyncTick + 1,
           syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" },
         }));
@@ -386,11 +392,18 @@ export function createAppStore(init: Partial<AppState> = {}) {
           [sku]: { ...(s.prodThr[sku] ?? {}), [key]: value },
         },
       })),
+    setScaleThreshold: (sku, key, value) =>
+      set((s) => ({
+        prodScale: {
+          ...s.prodScale,
+          [sku]: { ...(s.prodScale[sku] ?? {}), [key]: value },
+        },
+      })),
     setCloseMode: (sku, mode) =>
       set((s) => ({ closeOverride: { ...s.closeOverride, [sku]: mode } })),
     setSkipMetrics: (sku, keys) =>
       set((s) => ({ skipOverride: { ...s.skipOverride, [sku]: keys } })),
-    clearKpiDrafts: () => set({ prodThr: {}, closeOverride: {}, skipOverride: {} }),
+    clearKpiDrafts: () => set({ prodThr: {}, prodScale: {}, closeOverride: {}, skipOverride: {} }),
     toggleCreativeOpen: (id, defaultOn) =>
       set((s) => {
         const cur = s.creativeOpen[id] ?? defaultOn;

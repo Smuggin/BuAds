@@ -136,6 +136,7 @@ export async function patchProduct(
   sku: string,
   body: {
     thresholds?: Record<string, number>;
+    scaleThresholds?: Record<string, number>;
     closeMode?: CloseMode;
     skipMetrics?: MetricKey[];
     th?: string;
