@@ -5,13 +5,13 @@
  * One Graph call per dimension; each dimension best-effort. Server-only.
  */
 import { graphGetAll } from "./client";
-import { ageIndex, genderIndex, hourBucket12, weekdayIndexMon } from "./map";
+import { ageIndex, genderIndex, hourBucket12, pickRoas, weekdayIndexMon } from "./map";
 import { emptyBreakdownAccum, type BreakdownAccum, type Seg } from "@/lib/breakdown";
 import { timeParams, type TimeSpec } from "@/lib/windows";
 
 const n = (s?: string): number => (s ? parseFloat(s) : 0);
-const roasOf = (pr?: { action_type: string; value: string }[]): number =>
-  pr && pr.length ? n(pr[0].value) : 0;
+// Same omni_purchase-first ROAS as the campaign/creative metrics — see map.pickRoas.
+const roasOf = (pr?: { action_type: string; value: string }[]): number => pickRoas(pr);
 const add = (seg: Seg, impr: number, spend: number, rev: number): void => {
   seg.impr += impr;
   seg.spend += spend;

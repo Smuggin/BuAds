@@ -11,7 +11,7 @@ import { accountMetaFor } from "@/lib/constants";
 import { evalCampaign } from "@/lib/kpi";
 import { notifyOnce } from "@/lib/notify";
 import type { MetricKey } from "@/data/types";
-import { graphGet, graphGetAll, mapPool } from "./client";
+import { graphGet, graphGetAll, mapPool, UNIFIED_ATTRIBUTION } from "./client";
 import { fetchAdSetDailyBudgets, effectiveDailyBudget } from "./budget";
 import { getActiveToken } from "./auth";
 import { insightMetrics, toAdStatus, INSIGHT_WINDOW_DAYS, type MetaInsightRow } from "./map";
@@ -143,7 +143,7 @@ export async function runSync(
           campaignWindows.map(async (window) => {
             const res = await graphGet<{ data: CampRow[] }>(
               `/${actId}/insights`,
-              { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500 },
+              { level: "campaign", date_preset: window, fields: INSIGHT_FIELDS, limit: 500, ...UNIFIED_ATTRIBUTION },
               token,
             );
             const m = new Map<string, CampRow>();

@@ -53,11 +53,27 @@ function pickAction(arr: ActionList | undefined, types: string[]): number {
 /** First value of an action-typed list (the video_* fields each carry one row). */
 const firstVal = (arr: ActionList | undefined): number => (arr?.length ? num(arr[0].value) : 0);
 
+/**
+ * ROAS for the SAME purchase definition as `purchases`/`cpa` (omni_purchase first), so
+ * ROAS matches Business Suite's Purchase ROAS and stays consistent with the Purchases
+ * column. `purchase_roas` can carry several action types; taking `[0]` blindly grabs
+ * whichever Meta ordered first (app / pixel / omni). Falls back to the first entry only
+ * when no known purchase type is present.
+ */
+export function pickRoas(pr: ActionList | undefined): number {
+  if (!pr?.length) return 0;
+  for (const t of PURCHASE_TYPES) {
+    const hit = pr.find((a) => a.action_type === t);
+    if (hit) return num(hit.value);
+  }
+  return num(pr[0].value);
+}
+
 /** Extract the 7 judged KPIs (+ extras) from an insights row. */
 export function insightMetrics(r: MetaInsightRow) {
   const spend = num(r.spend);
   const purchases = pickAction(r.actions, PURCHASE_TYPES);
-  const roas = r.purchase_roas?.length ? num(r.purchase_roas[0].value) : 0;
+  const roas = pickRoas(r.purchase_roas);
   const cpPurchase = pickAction(r.cost_per_action_type, PURCHASE_TYPES);
   return {
     spend,

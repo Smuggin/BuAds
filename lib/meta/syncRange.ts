@@ -17,7 +17,7 @@ import { getActiveToken } from "./auth";
 import { graphGet, graphGetAll } from "./client";
 import { gatherAccounts, INSIGHT_FIELDS } from "./sync";
 import { AD_INSIGHT_FIELDS } from "./syncCreatives";
-import { aggregateInsights, hourIndex24, insightMetrics, type MetaInsightRow } from "./map";
+import { aggregateInsights, hourIndex24, insightMetrics, pickRoas, type MetaInsightRow } from "./map";
 import { fetchAdSetDailyBudgets, effectiveDailyBudget } from "./budget";
 import { timeParams, type TimeSpec } from "@/lib/windows";
 
@@ -62,7 +62,7 @@ async function fetchDailySpend(
   for (const r of rows) {
     if (!r.date_start) continue;
     const spend = r.spend ? parseFloat(r.spend) : 0;
-    const roas = r.purchase_roas?.length ? parseFloat(r.purchase_roas[0].value) : 0;
+    const roas = pickRoas(r.purchase_roas);
     daily[r.date_start] = (daily[r.date_start] ?? 0) + spend;
     dailyRev[r.date_start] = (dailyRev[r.date_start] ?? 0) + spend * roas;
   }
@@ -98,7 +98,7 @@ async function fetchHourly(
     const h = hourIndex24(r.hourly_stats_aggregated_by_advertiser_time_zone ?? "");
     if (h < 0) continue;
     const spend = r.spend ? parseFloat(r.spend) : 0;
-    const roas = r.purchase_roas?.length ? parseFloat(r.purchase_roas[0].value) : 0;
+    const roas = pickRoas(r.purchase_roas);
     hourlySpend[h] += spend;
     hourlyRev[h] += spend * roas;
   }

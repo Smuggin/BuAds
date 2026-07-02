@@ -9,6 +9,14 @@
 const VERSION = process.env.META_API_VERSION || "v23.0";
 const BASE = `https://graph.facebook.com/${VERSION}`;
 
+/**
+ * Spread into every insights request that reads conversions (purchase_roas / actions /
+ * cost_per_action_type). Returns results under the ad set's configured attribution
+ * setting — the same basis Ads Manager / Business Suite display — so ROAS, purchases and
+ * CPA match 1:1 instead of the API's legacy default window.
+ */
+export const UNIFIED_ATTRIBUTION = { use_unified_attribution_setting: true } as const;
+
 export class MetaApiError extends Error {
   code?: number;
   subcode?: number;
