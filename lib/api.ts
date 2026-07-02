@@ -273,6 +273,34 @@ export async function patchRule(id: string, on: boolean): Promise<void> {
   });
   if (!res.ok) throw new Error(`rule toggle failed (${res.status})`);
 }
+/** A staged campaign edit to commit to Meta: an on/off flip and/or a new daily budget (THB). */
+export interface CampaignChange {
+  id: string; // metaCampaignId
+  status?: "ACTIVE" | "PAUSED";
+  dailyThb?: number;
+}
+export interface CampaignChangeResult {
+  id: string;
+  ok: boolean;
+  error?: string;
+}
+/** Batch-commit staged campaign edits (on/off + budget) through the guarded POST write path. */
+export async function applyCampaignChanges(
+  changes: CampaignChange[],
+): Promise<CampaignChangeResult[]> {
+  const res = await fetch("/api/campaigns/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    results?: CampaignChangeResult[];
+    error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `apply failed (${res.status})`);
+  return data.results ?? [];
+}
+
 export const getLogs = () => getJSON<LogEntry[]>("/api/logs");
 export const getNotifications = () => getJSON<Notification[]>("/api/notifications");
 export const getCategories = () => getJSON<Category[]>("/api/categories");

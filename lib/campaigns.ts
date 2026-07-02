@@ -305,4 +305,6 @@ export function shouldCloseGroup(groups: CampaignGroup[]): CampaignGroup | null 
   };
 }
 
-export const CAMPAIGN_METRIC_DEFS = METRIC_DEFS;
+// Campaign table omits the Cost/วัน column — daily spend is shown via the งบ/วัน
+// budget column here and isn't judged per-campaign in this view.
+export const CAMPAIGN_METRIC_DEFS = METRIC_DEFS.filter((m) => m.key !== "cost");
