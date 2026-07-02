@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { getNotifications, getRules } from "@/lib/api";
@@ -41,6 +41,27 @@ export function NotificationsBell() {
     };
   }, []);
 
+  // Close on click outside the bell/panel, or on Escape. A fixed-overlay backdrop
+  // can't be used here: the TopBar's `backdrop-blur` makes the header the containing
+  // block for `position: fixed`, so a full-screen overlay would be trapped inside the
+  // header strip and never catch clicks on the page below.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close]);
+
   const unread = read ? 0 : notifications.length;
   const warnCount = notifications.filter((n) => n.kind === "warn").length;
   const activeRules = rules.filter((r) => effRuleOn(r, ruleOverride)).length;
@@ -48,7 +69,7 @@ export function NotificationsBell() {
   const rulesOk = offRules === 0;
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={toggle}
@@ -95,14 +116,7 @@ export function NotificationsBell() {
       </button>
 
       {open && (
-        <>
-          <button
-            type="button"
-            aria-label="ปิด"
-            onClick={close}
-            className="fixed inset-0 z-40 cursor-default"
-          />
-          <div className="absolute right-0 top-[46px] z-50 w-[388px] overflow-hidden rounded-[14px] border border-[#e4e7ec] bg-card shadow-dropdown">
+        <div className="absolute right-0 top-[46px] z-50 w-[388px] overflow-hidden rounded-[14px] border border-[#e4e7ec] bg-card shadow-dropdown">
             <div className="flex items-center justify-between border-b border-border-2 px-4 py-[13px]">
               <div className="text-[14px] font-semibold">การแจ้งเตือน · Notifications</div>
               <span className="num text-[11px] font-semibold text-danger">
@@ -185,7 +199,6 @@ export function NotificationsBell() {
               ดูประวัติการทำงานทั้งหมด →
             </button>
           </div>
-        </>
       )}
     </div>
   );
