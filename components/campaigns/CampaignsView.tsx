@@ -67,6 +67,7 @@ export function CampaignsView() {
   const accountFilter = useAppStore((s) => s.accountFilter);
   const range = useAppStore((s) => s.range);
   const customRange = useAppStore((s) => s.customRange);
+  const rangeSyncTick = useAppStore((s) => s.rangeSyncTick);
 
   const setGroupBy = useAppStore((s) => s.setGroupBy);
   const setGroupSort = useAppStore((s) => s.setGroupSort);
@@ -104,7 +105,7 @@ export function CampaignsView() {
     return () => {
       alive = false;
     };
-  }, [range, customRange]);
+  }, [range, customRange, rangeSyncTick]);
 
   // Near-realtime on/off: refetch the (background-poller-refreshed) cache every 120s,
   // and pull a fresh status the moment the tab regains focus, so the toggles track

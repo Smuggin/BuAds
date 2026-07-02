@@ -23,6 +23,7 @@ export function KpiSummaryStrip() {
   const accountFilter = useAppStore((s) => s.accountFilter);
   const range = useAppStore((s) => s.range);
   const customRange = useAppStore((s) => s.customRange);
+  const rangeSyncTick = useAppStore((s) => s.rangeSyncTick);
   const visibleKeys = useAppStore((s) => s.visibleKpiKeys);
   const setVisibleKeys = useAppStore((s) => s.setVisibleKpiKeys);
 
@@ -32,7 +33,7 @@ export function KpiSummaryStrip() {
     return () => {
       alive = false;
     };
-  }, [accountFilter, range, customRange]);
+  }, [accountFilter, range, customRange, rangeSyncTick]);
 
   const byKey = useMemo(() => {
     const m = new Map<string, SummaryCard>();
