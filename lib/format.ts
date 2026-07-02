@@ -13,14 +13,16 @@ export const PERF_COLORS = {
 
 export const round1 = (v: number): number => Math.round(v * 10) / 10;
 
-/** ฿ + grouped thousands, no decimals. */
+/** ฿ + grouped thousands, 2 decimals — matches Meta Business Suite money columns
+ *  (amount spent, CPM, cost/purchase, daily budget: `฿5,000.00`, `฿95.32`). */
 export const fmtMoney = (v: number): string =>
-  "฿" + Math.round(v).toLocaleString("en-US");
+  "฿" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** roas → `4.6x`, ctr → `1.8%`, money metrics → `฿1,600`. */
+/** roas → `4.62x`, ctr → `1.83%`, money metrics → `฿1,600.00`. Two decimals so every
+ *  column reads 1:1 with Meta Business Suite (the app keeps its x / % / ฿ suffixes). */
 export function fmtMetric(key: MetricKey, value: number): string {
-  if (key === "roas") return round1(value) + "x";
-  if (key === "ctr") return round1(value) + "%";
+  if (key === "roas") return value.toFixed(2) + "x";
+  if (key === "ctr") return value.toFixed(2) + "%";
   return fmtMoney(value);
 }
 

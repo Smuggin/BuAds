@@ -8,7 +8,7 @@ import {
   type BreakdownData,
   type ProductInAccount,
 } from "@/lib/api";
-import { fmtMoney, round1 } from "@/lib/format";
+import { fmtMetric, fmtMoney } from "@/lib/format";
 import { useAppStore, usePerfColor } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
 import { AudienceBreakdown } from "@/components/charts/AudienceBreakdown";
@@ -107,7 +107,7 @@ export function BreakdownView() {
                   <td className="num px-3 py-[10px] text-right text-ink-2">{p.campaigns}</td>
                   <td className="num px-3 py-[10px] text-right text-ink-2">{fmtMoney(p.spend)}</td>
                   <td className="num px-3 py-[10px] text-right font-semibold" style={{ color: pc(p.roas) }}>
-                    {round1(p.roas)}x
+                    {fmtMetric("roas", p.roas)}
                   </td>
                   <td className="px-4 py-[10px] text-[11.5px] text-muted">{CLOSE_LABEL[p.closeMode] ?? p.closeMode}</td>
                 </tr>
@@ -177,7 +177,7 @@ export function BreakdownView() {
             {bd.age.map(([label, pct, roas]) => (
               <div key={label} className="flex h-full flex-1 flex-col items-center justify-end gap-[6px]">
                 <div className="num text-[10.5px] font-semibold" style={{ color: pc(roas) }}>
-                  {roas.toFixed(1)}x
+                  {fmtMetric("roas", roas)}
                 </div>
                 <div className="flex w-full flex-1 items-end">
                   <div className="w-full rounded-t-[4px] bg-accent" style={{ height: `${(pct / ageMax) * 100}%` }} />
@@ -198,7 +198,7 @@ export function BreakdownView() {
                 <div className="mb-[6px] flex items-center gap-2">
                   <span className="h-[9px] w-[9px] flex-shrink-0 rounded-[3px]" style={{ background: color }} />
                   <span className="flex-1 text-[12px] text-ink-2">{label}</span>
-                  <span className="num text-[11px]" style={{ color: pc(roas) }}>{roas.toFixed(1)}x</span>
+                  <span className="num text-[11px]" style={{ color: pc(roas) }}>{fmtMetric("roas", roas)}</span>
                   <span className="num w-[42px] text-right text-[12px] font-semibold">{pct}%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-[5px] bg-[#f0f1f3]">
@@ -222,7 +222,7 @@ export function BreakdownView() {
                   </div>
                   <span className="num w-[34px] text-right text-[11px] font-semibold text-ink">{pct}%</span>
                   <span className="num w-[42px] text-right text-[11px]" style={{ color: pc(roas) }}>
-                    {roas.toFixed(1)}x
+                    {fmtMetric("roas", roas)}
                   </span>
                 </div>
               </div>

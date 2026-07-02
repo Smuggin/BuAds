@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { fmtMoney } from "@/lib/format";
 import type { AvailableAccount, ConnectionAccount, ConnStatus } from "@/data/types";
 import { requireAuth } from "@/lib/auth/guard";
 
@@ -44,7 +45,7 @@ export async function GET() {
         connected: true,
         status: STATUS[a.status] ?? "active",
         lastSync: relTime(a.lastSyncAt),
-        spend: "฿" + Math.round(spend).toLocaleString("en-US"),
+        spend: fmtMoney(spend),
         products: a._count.products,
       };
     });
