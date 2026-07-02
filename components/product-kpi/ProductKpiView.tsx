@@ -147,6 +147,15 @@ export function ProductKpiView() {
     setDragSku(null);
   };
 
+  if (!products) {
+    return (
+      <div className="flex animate-pulse flex-col gap-4">
+        <Card className="h-[76px]" />
+        <Card className="h-[420px]" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Banner
