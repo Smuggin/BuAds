@@ -7,7 +7,7 @@
  * Coverage = every creative; metrics are delivery-driven (last 30d). Server-only.
  */
 import { prisma } from "@/lib/db";
-import { graphGet, graphGetAll } from "./client";
+import { graphGet, graphGetAll, mapPool } from "./client";
 import {
   aggregateInsights,
   buildAudienceProfile,
@@ -80,33 +80,39 @@ export async function syncCreatives(
   const result: CreativeSyncResult = { creatives: 0, links: 0, insights: 0, errors: [] };
   const actId = account.metaAccountId;
 
-  // A. every ad + its embedded creative (no status filter — we want every creative)
-  const ads = await graphGetAll<MetaAd>(`/${actId}/ads`, { fields: ADS_FIELDS }, token);
+  // A/B/D. ads (+embedded creative), ad-level insights per window (incl. video funnel),
+  // and per-ad audience breakdowns are independent fetches — run them concurrently.
+  const [ads, insWindowEntries, audienceByAd] = await Promise.all([
+    graphGetAll<MetaAd>(`/${actId}/ads`, { fields: ADS_FIELDS, limit: 500 }, token),
+    Promise.all(
+      INSIGHT_WINDOWS.map(async (window) => {
+        const rows = await graphGetAll<MetaInsightRow>(
+          `/${actId}/insights`,
+          { level: "ad", date_preset: window, fields: AD_INSIGHT_FIELDS, limit: 500 },
+          token,
+        );
+        const m = new Map<string, MetaInsightRow>();
+        for (const r of rows) if (r.ad_id) m.set(r.ad_id, r);
+        return [window, m] as const;
+      }),
+    ),
+    fetchAudience(actId, token).catch((e) => {
+      result.errors.push(`audience ${actId}: ${e instanceof Error ? e.message : String(e)}`);
+      return new Map<string, AdAudience>();
+    }),
+  ]);
+  const insByAdByWindow = new Map<string, Map<string, MetaInsightRow>>(insWindowEntries);
 
-  // B. ad-level insights (incl. video funnel) per window (7/30/90d), keyed by ad_id
-  const insByAdByWindow = new Map<string, Map<string, MetaInsightRow>>();
-  for (const window of INSIGHT_WINDOWS) {
-    const rows = await graphGetAll<MetaInsightRow>(
-      `/${actId}/insights`,
-      { level: "ad", date_preset: window, fields: AD_INSIGHT_FIELDS, limit: 500 },
-      token,
-    );
-    const m = new Map<string, MetaInsightRow>();
-    for (const r of rows) if (r.ad_id) m.set(r.ad_id, r);
-    insByAdByWindow.set(window, m);
-  }
-
-  // C. resolve distinct posts by unique id (best-effort, deduped, capped)
+  // C. resolve distinct posts by unique id (best-effort, deduped, capped). Fetch with a
+  //    bounded pool instead of one-at-a-time; kept per-id (not a batched ?ids= read) so
+  //    a single unreachable post can't sink the rest of the batch.
   const storyIds = new Set<string>();
   for (const ad of ads) {
     const sid = ad.creative?.effective_object_story_id ?? ad.creative?.object_story_id;
     if (sid) storyIds.add(sid);
   }
   const posts = new Map<string, MetaPost>();
-  let postCalls = 0;
-  for (const sid of storyIds) {
-    if (postCalls >= MAX_POSTS_PER_ACCOUNT) break;
-    postCalls++;
+  await mapPool([...storyIds].slice(0, MAX_POSTS_PER_ACCOUNT), 6, async (sid) => {
     try {
       posts.set(
         sid,
@@ -115,15 +121,7 @@ export async function syncCreatives(
     } catch {
       /* post not reachable (permissions / deleted) — degrade gracefully */
     }
-  }
-
-  // D. per-ad audience breakdowns (age/gender/region/hour/day), folded per creative below.
-  let audienceByAd = new Map<string, AdAudience>();
-  try {
-    audienceByAd = await fetchAudience(actId, token);
-  } catch (e) {
-    result.errors.push(`audience ${actId}: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  });
 
   // Group ads by creative id (one page row per creative, deduped across campaigns).
   const groups = new Map<string, { creative: MetaCreativeObj; ads: MetaAd[] }>();
@@ -134,6 +132,16 @@ export async function syncCreatives(
     g.ads.push(ad);
     groups.set(cr.id, g);
   }
+
+  // Prefetch existing creative rows in one query (was a findUnique per creative).
+  const existingByCreativeId = new Map(
+    (
+      await prisma.creative.findMany({
+        where: { metaCreativeId: { in: [...groups.keys()] } },
+        select: { metaCreativeId: true, productId: true },
+      })
+    ).map((c) => [c.metaCreativeId, c]),
+  );
 
   for (const [metaCreativeId, g] of groups) {
     try {
@@ -156,10 +164,7 @@ export async function syncCreatives(
 
       // Product: keep an existing assignment; else inherit from the group's
       // campaigns; else best-effort match on the creative name.
-      const existing = await prisma.creative.findUnique({
-        where: { metaCreativeId },
-        select: { productId: true },
-      });
+      const existing = existingByCreativeId.get(metaCreativeId);
       let productId = existing?.productId ?? null;
       if (!productId) {
         for (const ad of g.ads) {
@@ -201,44 +206,43 @@ export async function syncCreatives(
         const ref = ad.campaign_id ? campaignIdMap.get(ad.campaign_id) : undefined;
         if (ref) localCampIds.add(ref.id);
       }
-      for (const campaignId of localCampIds) {
-        await prisma.campaignCreative.upsert({
-          where: { campaignId_creativeId: { campaignId, creativeId: creative.id } },
-          update: {},
-          create: { campaignId, creativeId: creative.id },
+      if (localCampIds.size) {
+        await prisma.campaignCreative.createMany({
+          data: [...localCampIds].map((campaignId) => ({ campaignId, creativeId: creative.id })),
+          skipDuplicates: true,
         });
-        result.links++;
+        result.links += localCampIds.size;
       }
 
-      // Replace the CREATIVE snapshot per window; only write when the creative
-      // delivered in that window. Audience (30d-derived) is reused across windows.
-      for (const window of INSIGHT_WINDOWS) {
+      // Replace the CREATIVE snapshots; only write windows the creative delivered in.
+      // Audience (30d-derived) is reused across windows. Two queries instead of a
+      // deleteMany + create per window.
+      await prisma.insightSnapshot.deleteMany({
+        where: { level: "CREATIVE", creativeId: creative.id, window: { in: [...INSIGHT_WINDOWS] } },
+      });
+      const snapRows = INSIGHT_WINDOWS.flatMap((window) => {
         const insByAd = insByAdByWindow.get(window)!;
         const rows = g.ads
           .map((ad) => insByAd.get(ad.id))
           .filter((r): r is MetaInsightRow => !!r);
-        await prisma.insightSnapshot.deleteMany({
-          where: { level: "CREATIVE", window, creativeId: creative.id },
-        });
-        if (rows.length) {
-          const agg = aggregateInsights(rows);
-          if (agg.impressions > 0) {
-            const { video, engagement, ...kpis } = agg;
-            await prisma.insightSnapshot.create({
-              data: {
-                level: "CREATIVE",
-                window,
-                creativeId: creative.id,
-                ...kpis,
-                video,
-                engagement,
-                audience: audience ?? undefined,
-                fetchedAt: new Date(),
-              },
-            });
-            result.insights++;
-          }
-        }
+        if (!rows.length) return [];
+        const agg = aggregateInsights(rows);
+        if (agg.impressions <= 0) return [];
+        const { video, engagement, ...kpis } = agg;
+        return [{
+          level: "CREATIVE" as const,
+          window,
+          creativeId: creative.id,
+          ...kpis,
+          video,
+          engagement,
+          audience: audience ?? undefined,
+          fetchedAt: new Date(),
+        }];
+      });
+      if (snapRows.length) {
+        await prisma.insightSnapshot.createMany({ data: snapRows });
+        result.insights += snapRows.length;
       }
     } catch (e) {
       result.errors.push(`creative ${metaCreativeId}: ${e instanceof Error ? e.message : String(e)}`);
