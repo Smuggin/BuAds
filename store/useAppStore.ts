@@ -7,6 +7,7 @@
  */
 import { createStore } from "zustand/vanilla";
 import { streamMetaSync, streamRangeSync, type SyncResult } from "@/lib/api";
+import type { CampFilters } from "@/lib/campaigns";
 import type {
   AccountKey,
   Category,
@@ -23,7 +24,7 @@ export interface SyncProgress {
   stage: string; // bilingual current-stage label
 }
 
-export type GroupBy = "product" | "account" | "none";
+export type GroupBy = "product" | "account" | "status" | "none";
 export type GroupSort = "perf" | "name";
 export type SortDir = "asc" | "desc";
 export type CampSortKey = MetricKey | "name" | "status" | "open" | "budget";
@@ -118,6 +119,7 @@ export interface AppState {
   groupDir: SortDir;
   campSort: CampSortKey;
   campDir: SortDir;
+  campFilters: CampFilters; // ephemeral multi-select filters (status/on-off/product/close/search)
 
   // overrides
   campOverride: Record<string, boolean>;
@@ -178,6 +180,14 @@ export interface AppActions {
   setGroupSort: (g: GroupSort) => void;
   toggleGroupDir: () => void;
   setCampSort: (key: CampSortKey, firstDir: SortDir) => void;
+
+  /** Toggle one value in an array-valued filter dimension (status/onOff/skus/close). */
+  toggleCampFilter: <K extends "status" | "onOff" | "skus" | "close">(
+    key: K,
+    value: CampFilters[K][number],
+  ) => void;
+  setCampQuery: (query: string) => void;
+  clearCampFilters: () => void;
 
   toggleCamp: (id: string, defaultOn: boolean) => void;
   setBudgetOverride: (id: string, value: number) => void;
@@ -259,6 +269,7 @@ export const initialAppState: AppState = {
   groupDir: "desc",
   campSort: "status",
   campDir: "desc",
+  campFilters: { status: [], onOff: [], skus: [], close: [], query: "" },
   campOverride: {},
   budgetOverride: {},
   prodThr: {},
@@ -362,6 +373,16 @@ export function createAppStore(init: Partial<AppState> = {}) {
           ? { campDir: s.campDir === "asc" ? "desc" : "asc" }
           : { campSort: key, campDir: firstDir },
       ),
+
+    toggleCampFilter: (key, value) =>
+      set((s) => {
+        const arr = s.campFilters[key] as (typeof value)[];
+        const next = arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+        return { campFilters: { ...s.campFilters, [key]: next } };
+      }),
+    setCampQuery: (query) => set((s) => ({ campFilters: { ...s.campFilters, query } })),
+    clearCampFilters: () =>
+      set({ campFilters: { status: [], onOff: [], skus: [], close: [], query: "" } }),
 
     toggleCamp: (id, defaultOn) =>
       set((s) => {

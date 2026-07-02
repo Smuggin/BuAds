@@ -14,7 +14,13 @@ import {
   type CampaignChangeResult,
 } from "@/lib/api";
 import { accountMetaFor, firstSortDir } from "@/lib/constants";
-import { buildCampaignGroups, shouldCloseGroup, type CampSortKey } from "@/lib/campaigns";
+import {
+  buildCampaignGroups,
+  hasActiveFilters,
+  pinnedActionGroups,
+  type CampFilters,
+  type CampSortKey,
+} from "@/lib/campaigns";
 import {
   effBudget,
   effCloseMode,
@@ -22,9 +28,10 @@ import {
   effSkipMetrics,
   effThresholds,
 } from "@/lib/resolvers";
-import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
+import { evalCampaign, resolveCampaignState, verdictMeta } from "@/lib/kpi";
 import { useAppStore } from "@/store/AppProvider";
 import { Card } from "@/components/ui/Card";
+import { FilterMenu, type FilterOption } from "@/components/ui/FilterMenu";
 import { CampaignGroupTable } from "./CampaignGroupTable";
 import { AssignSkuModal } from "./AssignSkuModal";
 import { BudgetModal } from "./BudgetModal";
@@ -37,12 +44,47 @@ import type { Campaign, Creative, LogEntry, Product } from "@/data/types";
 const GROUP_BY_OPTS = [
   ["product", "จัดกลุ่มตามสินค้า · by product"],
   ["account", "จัดกลุ่มตามบัญชี · by ad account"],
+  ["status", "จัดกลุ่มตามสถานะ · by status"],
   ["none", "ทุกแคมเปญ · no grouping"],
 ] as const;
 const GROUP_SORT_OPTS = [
   ["perf", "ประสิทธิภาพกลุ่ม · performance"],
   ["name", "ชื่อกลุ่ม · name"],
 ] as const;
+
+// Filter dimension option lists (bilingual labels; icons/colors from verdictMeta).
+const STATUS_OPTS: { value: string; label: string }[] = [
+  { value: "scale", label: "ควรสเกล · Should scale" },
+  { value: "interesting", label: "น่าสนใจ · Interesting" },
+  { value: "running", label: "กำลังรัน · Running" },
+  { value: "breach", label: "ควรปิด · Should close" },
+];
+const STATUS_FILTER_OPTS: FilterOption[] = STATUS_OPTS.map((o) => {
+  const m = verdictMeta(o.value as "scale" | "interesting" | "running" | "breach");
+  return { ...o, icon: m.icon, color: m.color };
+});
+const ONOFF_FILTER_OPTS: FilterOption[] = [
+  { value: "on", label: "เปิด · On", icon: "●", color: "#1f8a5b" },
+  { value: "off", label: "ปิด · Off", icon: "⏸", color: "#6b7280" },
+];
+const CLOSE_FILTER_OPTS: FilterOption[] = [
+  { value: "OFF", label: "ปิด · Off" },
+  { value: "SUGGEST", label: "แนะนำ · Suggest", color: "#c98a16" },
+  { value: "AUTO", label: "อัตโนมัติ · Auto", color: "#1f8a5b" },
+];
+
+// Human labels for active-filter chips (value → bilingual).
+const FILTER_VALUE_LABEL: Record<string, string> = {
+  scale: "ควรสเกล · Scale",
+  interesting: "น่าสนใจ · Interesting",
+  running: "กำลังรัน · Running",
+  breach: "ควรปิด · Should close",
+  on: "เปิด · On",
+  off: "ปิด · Off",
+  OFF: "ปิดนโยบาย · Close: Off",
+  SUGGEST: "แนะนำ · Suggest",
+  AUTO: "อัตโนมัติ · Auto",
+};
 
 export function CampaignsView() {
   const [products, setProducts] = useState<Product[] | null>(null);
@@ -59,6 +101,7 @@ export function CampaignsView() {
   const groupDir = useAppStore((s) => s.groupDir);
   const campSort = useAppStore((s) => s.campSort);
   const campDir = useAppStore((s) => s.campDir);
+  const campFilters = useAppStore((s) => s.campFilters);
   const prodThr = useAppStore((s) => s.prodThr);
   const prodScale = useAppStore((s) => s.prodScale);
   const closeOverride = useAppStore((s) => s.closeOverride);
@@ -80,6 +123,9 @@ export function CampaignsView() {
   const setGroupSort = useAppStore((s) => s.setGroupSort);
   const toggleGroupDir = useAppStore((s) => s.toggleGroupDir);
   const setCampSort = useAppStore((s) => s.setCampSort);
+  const toggleCampFilter = useAppStore((s) => s.toggleCampFilter);
+  const setCampQuery = useAppStore((s) => s.setCampQuery);
+  const clearCampFilters = useAppStore((s) => s.clearCampFilters);
   const toggleCamp = useAppStore((s) => s.toggleCamp);
   const openBudgetModal = useAppStore((s) => s.openBudgetModal);
   const setBudgetDraft = useAppStore((s) => s.setBudgetDraft);
@@ -167,7 +213,7 @@ export function CampaignsView() {
   const scopedCampaigns =
     accountFilter === "all" ? campaigns : campaigns.filter((c) => c.account === accountFilter);
 
-  const { groups, summary } = buildCampaignGroups({
+  const { groups, summary, total, shown } = buildCampaignGroups({
     campaigns: scopedCampaigns,
     products,
     groupBy,
@@ -181,8 +227,25 @@ export function CampaignsView() {
     skipOverride,
     budgetOverride,
     campOverride,
+    filters: campFilters,
   });
-  const shouldClose = shouldCloseGroup(groups);
+  const pinned = pinnedActionGroups(groups, groupBy);
+  const filtersActive = hasActiveFilters(campFilters);
+  const productFilterOpts: FilterOption[] = products.map((p) => ({
+    value: p.sku,
+    label: `${p.th} · ${p.sku}`,
+  }));
+  // active-filter chips: flatten every selected value across dimensions
+  const activeChips: { key: keyof CampFilters; value: string; label: string }[] = [
+    ...campFilters.status.map((v) => ({ key: "status" as const, value: v, label: FILTER_VALUE_LABEL[v] })),
+    ...campFilters.onOff.map((v) => ({ key: "onOff" as const, value: v, label: FILTER_VALUE_LABEL[v] })),
+    ...campFilters.skus.map((v) => ({
+      key: "skus" as const,
+      value: v,
+      label: products.find((p) => p.sku === v)?.th ?? v,
+    })),
+    ...campFilters.close.map((v) => ({ key: "close" as const, value: v, label: FILTER_VALUE_LABEL[v] })),
+  ];
 
   const onSort = (key: CampSortKey) => setCampSort(key, firstSortDir(key));
 
@@ -341,7 +404,8 @@ export function CampaignsView() {
           <Chip bg="rgba(31,138,91,.2)" color="#5fd49b">⤴ {summary.scale} ควรสเกล</Chip>
           <Chip bg="rgba(201,138,22,.2)" color="#e6b24d">★ {summary.marked} น่าสนใจ</Chip>
           <Chip bg="rgba(150,156,166,.22)" color="#c4c9d1">● {summary.running} กำลังรัน</Chip>
-          <Chip bg="rgba(214,69,61,.2)" color="#f0938c">⏸ {summary.closed} ปิดแล้ว</Chip>
+          <Chip bg="rgba(214,69,61,.2)" color="#f0938c">⚠ {summary.breach} ควรปิด</Chip>
+          <Chip bg="rgba(150,156,166,.16)" color="#9aa0a8">⏸ {summary.closed} ปิดแล้ว</Chip>
           <Link
             href="/product-kpi"
             className="rounded-input bg-accent px-[14px] py-2 text-[12px] font-semibold text-white"
@@ -352,22 +416,68 @@ export function CampaignsView() {
       </section>
 
       {/* controls */}
-      <Card className="flex flex-wrap items-center gap-[18px] px-4 py-3">
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">มุมมอง</span>
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as typeof groupBy)}
-            className="rounded-input border border-[#dde1e7] bg-field-bg px-[10px] py-[7px] text-[12.5px] font-medium text-ink"
-          >
-            {GROUP_BY_OPTS.map(([v, label]) => (
-              <option key={v} value={v}>{label}</option>
-            ))}
-          </select>
-        </div>
-        {groupBy !== "none" && (
-          <>
-            <div className="h-6 w-px bg-[#e4e7ec]" />
+      <Card className="flex flex-col gap-3 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[10px]">
+          {/* search */}
+          <div className="relative">
+            <span className="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-[12px] text-faint">
+              ⌕
+            </span>
+            <input
+              type="text"
+              value={campFilters.query}
+              onChange={(e) => setCampQuery(e.target.value)}
+              placeholder="ค้นหาแคมเปญ · search"
+              className="w-[190px] rounded-input border border-[#dde1e7] bg-field-bg py-[7px] pl-[26px] pr-[8px] text-[12.5px] text-ink placeholder:text-faint focus:border-accent/60 focus:outline-none"
+            />
+          </div>
+
+          {/* filter dropdowns */}
+          <FilterMenu
+            label="สถานะ · Status"
+            options={STATUS_FILTER_OPTS}
+            selected={campFilters.status}
+            onToggle={(v) => toggleCampFilter("status", v as CampFilters["status"][number])}
+            onClear={() => campFilters.status.forEach((v) => toggleCampFilter("status", v))}
+          />
+          <FilterMenu
+            label="เปิด/ปิด · On/Off"
+            options={ONOFF_FILTER_OPTS}
+            selected={campFilters.onOff}
+            onToggle={(v) => toggleCampFilter("onOff", v as CampFilters["onOff"][number])}
+            onClear={() => campFilters.onOff.forEach((v) => toggleCampFilter("onOff", v))}
+          />
+          <FilterMenu
+            label="สินค้า · Product"
+            options={productFilterOpts}
+            selected={campFilters.skus}
+            onToggle={(v) => toggleCampFilter("skus", v)}
+            onClear={() => campFilters.skus.forEach((v) => toggleCampFilter("skus", v))}
+          />
+          <FilterMenu
+            label="นโยบายปิด · Close policy"
+            options={CLOSE_FILTER_OPTS}
+            selected={campFilters.close}
+            onToggle={(v) => toggleCampFilter("close", v as CampFilters["close"][number])}
+            onClear={() => campFilters.close.forEach((v) => toggleCampFilter("close", v))}
+          />
+
+          <div className="h-6 w-px bg-[#e4e7ec]" />
+
+          {/* grouping */}
+          <div className="flex items-center gap-[9px]">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">มุมมอง</span>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as typeof groupBy)}
+              className="rounded-input border border-[#dde1e7] bg-field-bg px-[10px] py-[7px] text-[12.5px] font-medium text-ink"
+            >
+              {GROUP_BY_OPTS.map(([v, label]) => (
+                <option key={v} value={v}>{label}</option>
+              ))}
+            </select>
+          </div>
+          {groupBy !== "none" && groupBy !== "status" && (
             <div className="flex items-center gap-[7px]">
               <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">เรียงกลุ่ม</span>
               <select
@@ -387,14 +497,68 @@ export function CampaignsView() {
                 {groupDir === "asc" ? "↑" : "↓"}
               </button>
             </div>
-          </>
+          )}
+
+          <div className="flex-1" />
+          <span className="num text-[11.5px] text-muted">
+            แสดง <span className="font-semibold text-ink">{shown}</span> จาก {total} แคมเปญ
+          </span>
+        </div>
+
+        {/* active-filter row */}
+        {filtersActive && (
+          <div className="flex flex-wrap items-center gap-[7px] border-t border-border-2 pt-[10px]">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">
+              ตัวกรอง
+            </span>
+            {campFilters.query.trim() && (
+              <FilterChip
+                label={`“${campFilters.query.trim()}”`}
+                onRemove={() => setCampQuery("")}
+              />
+            )}
+            {activeChips.map((c) => (
+              <FilterChip
+                key={`${c.key}:${c.value}`}
+                label={c.label}
+                onRemove={() => toggleCampFilter(c.key as "status" | "onOff" | "skus" | "close", c.value as never)}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearCampFilters}
+              className="ml-1 rounded-input px-[9px] py-[4px] text-[11.5px] font-medium text-accent hover:bg-accent/[0.08]"
+            >
+              ล้างทั้งหมด · Clear all
+            </button>
+          </div>
         )}
-        <div className="flex-1" />
-        <span className="text-[11px] text-faint">คลิกหัวคอลัมน์เพื่อเรียงแคมเปญในกลุ่ม</span>
       </Card>
 
-      {/* pinned: active campaigns breaching their KPIs (Suggest/Auto products) */}
-      {[shouldClose, ...groups].filter((g): g is NonNullable<typeof g> => !!g).map((g) => (
+      {/* empty state — no campaigns match the active filters */}
+      {shown === 0 && (
+        <Card className="flex flex-col items-center gap-2 px-6 py-12 text-center">
+          <div className="text-[28px] text-faint">⌕</div>
+          <div className="text-[13.5px] font-semibold text-ink">
+            ไม่พบแคมเปญตามตัวกรอง · No matching campaigns
+          </div>
+          <div className="text-[12px] text-muted-2">
+            ลองปรับหรือล้างตัวกรอง · try adjusting or clearing the filters
+          </div>
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearCampFilters}
+              className="mt-1 rounded-input bg-accent px-[14px] py-2 text-[12px] font-semibold text-white"
+            >
+              ล้างทั้งหมด · Clear all
+            </button>
+          )}
+        </Card>
+      )}
+
+      {/* pinned action groups (ควรสเกล / น่าสนใจ / ควรปิด / breaching) then the normal groups */}
+      {[...pinned, ...groups].filter((g): g is NonNullable<typeof g> => !!g).map((g) => (
         <CampaignGroupTable
           key={g.key}
           group={g}
@@ -426,6 +590,22 @@ export function CampaignsView() {
       )}
       {overlays}
     </div>
+  );
+}
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-[6px] rounded-pill border border-border bg-field-bg py-[4px] pl-[10px] pr-[6px] text-[11.5px] font-medium text-ink">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="remove filter"
+        className="flex h-[15px] w-[15px] items-center justify-center rounded-full text-[11px] text-muted hover:bg-border-2 hover:text-ink"
+      >
+        ✕
+      </button>
+    </span>
   );
 }
 
