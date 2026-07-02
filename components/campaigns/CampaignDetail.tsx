@@ -112,7 +112,6 @@ export function CampaignDetail({
                   className="num text-[17px] font-semibold"
                   style={{
                     color: !cell.enforced ? "#6b7280" : cell.ok ? "#1f8a5b" : "#d6453d",
-                    textDecoration: cell.enforced ? "none" : "line-through",
                   }}
                 >
                   {cell.disp}

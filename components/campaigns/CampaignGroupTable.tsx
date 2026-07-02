@@ -174,7 +174,6 @@ export function CampaignGroupTable({
                               : cell.ok
                                 ? "#1f8a5b"
                                 : "#d6453d",
-                          textDecoration: cell.enforced ? "none" : "line-through",
                         }}
                       >
                         {cell.disp}
