@@ -1,0 +1,28 @@
+name: CI
+
+# Typecheck + unit tests on every push to main and every PR.
+# Both steps are hermetic (no DB / no env needed). `next build` is intentionally
+# omitted — it requires DATABASE_URL and other env at build time; add it here with
+# repo secrets if you want it gated too.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
