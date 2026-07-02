@@ -22,7 +22,7 @@ import { Card } from "@/components/ui/Card";
 import { CampaignGroupTable } from "./CampaignGroupTable";
 import { AssignSkuModal } from "./AssignSkuModal";
 import { BudgetModal } from "./BudgetModal";
-import { SaveChangesBar } from "./SaveChangesBar";
+import { SaveChangesBar } from "@/components/ui/SaveChangesBar";
 import { ConfirmChangesModal, type PendingChange } from "./ConfirmChangesModal";
 import { HistoryModal } from "./HistoryModal";
 import { CampaignDetail } from "./CampaignDetail";

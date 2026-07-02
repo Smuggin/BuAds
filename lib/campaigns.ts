@@ -11,7 +11,7 @@ import type {
   Product,
   Thresholds,
 } from "@/data/types";
-import { accountMetaFor, METRIC_DEFS, RAMP } from "./constants";
+import { accountMetaFor, KPI_METRIC_DEFS, METRIC_DEFS, RAMP } from "./constants";
 import { fmtMetric } from "./format";
 import { effBudget, effCloseMode, effSkipMetrics, effThresholds } from "./resolvers";
 import { evalCampaign, resolveCampaignState, type CampaignState, type EvalResult } from "./kpi";
@@ -305,6 +305,6 @@ export function shouldCloseGroup(groups: CampaignGroup[]): CampaignGroup | null 
   };
 }
 
-// Campaign table omits the Cost/วัน column — daily spend is shown via the งบ/วัน
-// budget column here and isn't judged per-campaign in this view.
-export const CAMPAIGN_METRIC_DEFS = METRIC_DEFS.filter((m) => m.key !== "cost");
+// Campaign table shows exactly the KPIs configured on the Product-KPI page (shared
+// KPI_METRIC_DEFS: no CPA, no Cost/วัน). Daily spend still surfaces via the งบ/วัน column.
+export { KPI_METRIC_DEFS as CAMPAIGN_METRIC_DEFS };

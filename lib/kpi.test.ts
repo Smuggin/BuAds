@@ -30,9 +30,9 @@ describe("evalCampaign — verdicts", () => {
     expect(r.verdict).toBe("running"); // roas 4.2 < 4.0×1.2 (4.8)
   });
 
-  it("breach: counts every failing metric (k6 vs NGT-09 → all 7 fail)", () => {
+  it("breach: counts every failing metric (k6 vs NGT-09 → all 6 fail)", () => {
     const r = evalCampaign(byId("k6").metrics, bySku("NGT-09").thresholds);
-    expect(r.breaches).toBe(7);
+    expect(r.breaches).toBe(6); // cpr removed from the judged set (was 7)
     expect(r.verdict).toBe("breach");
   });
 

@@ -97,7 +97,7 @@ export function CampaignDetail({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2 sm:grid-cols-3 lg:grid-cols-6">
           {METRIC_DEFS.map((m, i) => {
             const cell = ev.cells[i];
             return (
@@ -112,7 +112,6 @@ export function CampaignDetail({
                   className="num text-[17px] font-semibold"
                   style={{
                     color: !cell.enforced ? "#6b7280" : cell.ok ? "#1f8a5b" : "#d6453d",
-                    textDecoration: cell.enforced ? "none" : "line-through",
                   }}
                 >
                   {cell.disp}

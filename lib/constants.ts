@@ -89,16 +89,25 @@ export function accountMetaFor(id: string, name?: string): AccountMeta {
   return { th: label, en: "Meta", initials, color: RAMP[hash % RAMP.length] };
 }
 
-/** The 7 judged KPIs, in display order (DESIGN §5 / .ai/kpi-engine.md). */
+// Judged KPIs, in display order (DESIGN §5 / .ai/kpi-engine.md).
+// cpr (cost per result) is intentionally omitted: it currently mirrors cpp
+// (cost per purchase) since per-goal results aren't pulled yet (see lib/meta/map.ts).
+// The cpr data field + thresholds remain for when real per-goal results land.
 export const METRIC_DEFS: MetricDef[] = [
   { key: "roas", short: "ROAS", dir: "min", money: false, suffix: "x" },
   { key: "ctr", short: "CTR", dir: "min", money: false, suffix: "%" },
   { key: "cpa", short: "CPA", dir: "max", money: true, suffix: "" },
   { key: "cpm", short: "CPM", dir: "max", money: true, suffix: "" },
-  { key: "cpp", short: "ต้นทุน/ซื้อ", dir: "max", money: true, suffix: "" },
-  { key: "cpr", short: "C/Result", dir: "max", money: true, suffix: "" },
+  { key: "cpp", short: "Purchase", dir: "max", money: true, suffix: "" },
   { key: "cost", short: "Cost/วัน", dir: "max", money: true, suffix: "" },
 ];
+
+/** The KPIs the team actually configures + reviews: the campaign-table columns and the
+ *  Product-KPI page share this exact set (roas, ctr, cpm, cpp). Excludes CPA and Cost/วัน.
+ *  Single source of truth — editing it updates both pages together. */
+export const KPI_METRIC_DEFS: MetricDef[] = METRIC_DEFS.filter(
+  (m) => m.key !== "cpa" && m.key !== "cost",
+);
 
 /** Categorical ramp (avatars, spend-share, charts). DESIGN §2. */
 export const RAMP = [

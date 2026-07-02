@@ -1,13 +1,16 @@
 "use client";
 
 interface Props {
-  count: number; // number of campaigns with staged edits
+  count: number; // number of items with staged edits
   onSave: () => void;
   onDiscard: () => void;
+  /** Optional label for what's being changed (default "unsaved change"). */
+  noun?: string;
 }
 
-/** Sticky action bar that appears once the user has staged on/off or budget edits. */
-export function SaveChangesBar({ count, onSave, onDiscard }: Props) {
+/** Sticky action bar that appears once the user has staged edits. Shared by the
+ *  Campaigns and Product-KPI pages so both save flows look and behave the same. */
+export function SaveChangesBar({ count, onSave, onDiscard, noun = "change" }: Props) {
   if (count === 0) return null;
   return (
     <div className="sticky bottom-4 z-30 flex items-center justify-between gap-4 rounded-card bg-ink px-[20px] py-[13px] text-white shadow-modal">
@@ -16,7 +19,8 @@ export function SaveChangesBar({ count, onSave, onDiscard }: Props) {
           {count}
         </span>
         <span className="text-[13px] font-medium">
-          การเปลี่ยนแปลงที่ยังไม่บันทึก · {count} unsaved change{count === 1 ? "" : "s"}
+          การเปลี่ยนแปลงที่ยังไม่บันทึก · {count} unsaved {noun}
+          {count === 1 ? "" : "s"}
         </span>
       </div>
       <div className="flex items-center gap-[9px]">
