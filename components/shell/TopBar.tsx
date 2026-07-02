@@ -45,6 +45,26 @@ export function TopBar() {
     setPickerOpen((o) => !o);
   };
 
+  // Close on outside click / Escape. A `fixed inset-0` backdrop can't be used
+  // here: the <header> uses `backdrop-blur-md`, which makes it the containing
+  // block for fixed descendants, trapping the backdrop inside the header strip.
+  const pickerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!pickerRef.current?.contains(e.target as Node)) setPickerOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPickerOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [pickerOpen]);
+
   const applyCustom = async () => {
     if (!since || !until) return;
     if (Date.parse(since) > Date.parse(until)) {
@@ -129,7 +149,7 @@ export function TopBar() {
         </div>
 
         {/* date range */}
-        <div className="relative">
+        <div ref={pickerRef} className="relative">
           <div className="flex rounded-control border border-[#dde1e7] bg-card p-[3px]" role="group" aria-label="ช่วงเวลา">
             {RANGES.map((r) => {
               const on = r.id === range;
@@ -165,14 +185,7 @@ export function TopBar() {
           </div>
 
           {pickerOpen && (
-            <>
-              <button
-                type="button"
-                aria-label="ปิด"
-                onClick={() => setPickerOpen(false)}
-                className="fixed inset-0 z-40 cursor-default"
-              />
-              <div className="absolute right-0 top-[44px] z-50 w-[248px] rounded-[12px] border border-[#e4e7ec] bg-card p-3 shadow-dropdown">
+            <div className="absolute right-0 top-[44px] z-50 w-[248px] rounded-[12px] border border-[#e4e7ec] bg-card p-3 shadow-dropdown">
                 <div className="text-[12.5px] font-semibold text-ink">ช่วงเวลากำหนดเอง · Custom range</div>
                 <div className="mb-[10px] mt-[2px] text-[11px] text-muted">สูงสุด 90 วัน · max 90 days</div>
                 <label className="mb-2 flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-[0.03em] text-muted-2">
@@ -212,8 +225,7 @@ export function TopBar() {
                     ใช้ · Apply
                   </button>
                 </div>
-              </div>
-            </>
+            </div>
           )}
         </div>
 
