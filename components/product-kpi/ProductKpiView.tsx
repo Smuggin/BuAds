@@ -323,11 +323,12 @@ export function ProductKpiView() {
                           {KPI_METRICS.map((m) => {
                             const key = m.key as MetricKey;
                             const enforced = !skip.includes(key);
+                            // เป้าสเกล is always enabled and visible — a skipped metric
+                            // still shows its scale target (just noted as ข้าม), never dimmed.
                             return (
                               <div
                                 key={m.key}
                                 className="flex items-center justify-between gap-3 rounded-[9px] border border-border-2 bg-card px-3 py-[9px]"
-                                style={{ opacity: enforced ? 1 : 0.4 }}
                               >
                                 <div className="min-w-0">
                                   <div className="text-[12px] font-semibold text-ink">
@@ -459,6 +460,8 @@ function ThresholdInput({
   value: number;
   onChange: (v: number) => void;
 }) {
+  // Both KPI limits and เป้าสเกล targets are entered freely (≥ 0). The scale
+  // target is intentionally not bounded by its limit — it can sit either side.
   return (
     <span className="inline-flex items-center justify-end gap-[3px]">
       {money && <span className="text-[11px] text-faint">฿</span>}
