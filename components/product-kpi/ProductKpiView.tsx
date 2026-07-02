@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { getProducts, patchProduct, reorderProducts } from "@/lib/api";
-import { METRIC_DEFS, RAMP } from "@/lib/constants";
+import { KPI_METRIC_DEFS, METRIC_DEFS, RAMP } from "@/lib/constants";
+import { NumberField } from "@/components/ui/NumberField";
+import { SaveChangesBar } from "@/components/ui/SaveChangesBar";
 import { effCloseMode, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { dirSymbol } from "@/lib/format";
 import { useAppStore } from "@/store/AppProvider";
@@ -27,7 +29,7 @@ const META_LABEL: Partial<Record<MetricKey, string>> = {
   cpp: "Cost per purchase",
   cpr: "Cost per result",
 };
-const KPI_METRICS = METRIC_DEFS.filter((m) => m.key !== "cpa" && m.key !== "cost");
+const KPI_METRICS = KPI_METRIC_DEFS; // shared with the campaign table (constants)
 const kpiKeys = KPI_METRICS.map((m) => m.key as MetricKey);
 const fmtVal = (key: MetricKey, v: number) => {
   const m = METRIC_DEFS.find((d) => d.key === key)!;
@@ -99,8 +101,6 @@ export function ProductKpiView() {
     return out;
   }, [products, prodThr, skipOverride, closeOverride]);
 
-  const dirty = changes.length > 0;
-
   const onSave = async () => {
     setSaving(true);
     try {
@@ -168,25 +168,6 @@ export function ProductKpiView() {
             <div className="text-[12px] text-muted">
               Purchase ROAS / CTR เป็นค่าต่ำสุด (≥) · ต้นทุนเป็นค่าสูงสุด (≤) · ติ๊กถูก = ใช้เกณฑ์, เอาออก = ข้าม
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {dirty && (
-              <button
-                type="button"
-                onClick={discard}
-                className="rounded-input border border-[#dde1e7] bg-card px-3 py-2 text-[12px] font-semibold text-slate"
-              >
-                ยกเลิก
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={!dirty || saving}
-              onClick={() => setConfirmOpen(true)}
-              className="rounded-input bg-accent px-[14px] py-2 text-[12px] font-semibold text-white disabled:opacity-50"
-            >
-              {dirty ? `บันทึก · Save (${changes.length})` : "บันทึก · Save"}
-            </button>
           </div>
         </div>
 
@@ -293,6 +274,12 @@ export function ProductKpiView() {
         </div>
       </Card>
 
+      <SaveChangesBar
+        count={changes.length}
+        onSave={() => setConfirmOpen(true)}
+        onDiscard={discard}
+      />
+
       {confirmOpen && (
         <div
           onClick={() => !saving && setConfirmOpen(false)}
@@ -300,40 +287,44 @@ export function ProductKpiView() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[82vh] w-[520px] max-w-full flex-col overflow-hidden rounded-[16px] bg-card shadow-modal"
+            className="flex max-h-[85vh] w-[560px] max-w-full flex-col overflow-hidden rounded-[16px] bg-card shadow-modal"
           >
             <div className="border-b border-border-2 px-[22px] py-[18px]">
-              <div className="text-[16px] font-semibold">ยืนยันการแก้เกณฑ์ · Confirm KPI changes</div>
+              <div className="text-[16px] font-semibold tracking-[-0.01em]">
+                ยืนยันการเปลี่ยนแปลง · Review changes
+              </div>
               <div className="mt-[2px] text-[12.5px] text-muted">
-                {changes.length} สินค้า · ระบบจะตัดสินแคมเปญใหม่ทันทีหลังบันทึก
+                {changes.length} สินค้า · ตัดสินแคมเปญใหม่ทันทีหลังบันทึก · re-judges campaigns on save
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 overflow-y-auto px-[22px] py-4">
-              {changes.map((c) => (
-                <div key={c.sku} className="rounded-[10px] border border-border-2 px-3 py-[10px]">
-                  <div className="mb-1 text-[13px] font-semibold text-ink">
-                    {c.name} <span className="num text-[11px] text-muted-2">· {c.sku}</span>
+            <div className="flex-1 overflow-y-auto px-[22px] py-4">
+              <div className="flex flex-col gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2">
+                {changes.map((c) => (
+                  <div key={c.sku} className="bg-card px-[14px] py-[11px]">
+                    <div className="text-[13px] font-semibold text-ink">
+                      {c.name} <span className="num text-[11px] text-muted-2">· {c.sku}</span>
+                    </div>
+                    <div className="mt-[5px] flex flex-col gap-[3px] text-[12px] text-slate">
+                      {c.thresholds.map((d) => (
+                        <div key={d.key} className="num">
+                          {META_LABEL[d.key] ?? d.key.toUpperCase()}:{" "}
+                          <span className="text-muted-2">{fmtVal(d.key, d.from)}</span> →{" "}
+                          <span className="font-semibold text-ink">{fmtVal(d.key, d.to)}</span>
+                        </div>
+                      ))}
+                      {c.close && (
+                        <div>
+                          โหมดปิด · On breach:{" "}
+                          <span className="text-muted-2">{CLOSE_LABEL[c.close.from]}</span> →{" "}
+                          <span className="font-semibold text-ink">{CLOSE_LABEL[c.close.to]}</span>
+                        </div>
+                      )}
+                      {c.skip && <div className="text-muted-2">ปรับรายการเกณฑ์ที่ข้าม · skip list updated</div>}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-[3px] text-[12px] text-slate">
-                    {c.thresholds.map((d) => (
-                      <div key={d.key} className="num">
-                        {META_LABEL[d.key] ?? d.key.toUpperCase()}:{" "}
-                        <span className="text-muted-2">{fmtVal(d.key, d.from)}</span> →{" "}
-                        <span className="font-semibold text-ink">{fmtVal(d.key, d.to)}</span>
-                      </div>
-                    ))}
-                    {c.close && (
-                      <div>
-                        โหมดปิด · On breach:{" "}
-                        <span className="text-muted-2">{CLOSE_LABEL[c.close.from]}</span> →{" "}
-                        <span className="font-semibold text-ink">{CLOSE_LABEL[c.close.to]}</span>
-                      </div>
-                    )}
-                    {c.skip && <div className="text-muted-2">ปรับรายการเกณฑ์ที่ข้าม · skip list updated</div>}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             <div className="flex gap-[10px] border-t border-border-2 px-[22px] py-4">
@@ -341,7 +332,7 @@ export function ProductKpiView() {
                 type="button"
                 onClick={() => setConfirmOpen(false)}
                 disabled={saving}
-                className="flex-1 rounded-[10px] border border-[#dde1e7] bg-card py-3 text-[13.5px] font-medium text-ink disabled:opacity-50"
+                className="rounded-[10px] border border-[#dde1e7] bg-card px-5 py-3 text-[13.5px] font-medium text-ink disabled:opacity-50"
               >
                 ยกเลิก · Cancel
               </button>
@@ -351,7 +342,7 @@ export function ProductKpiView() {
                 disabled={saving}
                 className="flex-1 rounded-[10px] border-none bg-accent py-3 text-[13.5px] font-semibold text-white disabled:opacity-60"
               >
-                {saving ? "กำลังบันทึก…" : "ยืนยันบันทึก · Confirm"}
+                {saving ? "กำลังบันทึก…" : `ยืนยันบันทึก ${changes.length} รายการ · Confirm`}
               </button>
             </div>
           </div>
@@ -375,13 +366,10 @@ function ThresholdInput({
   return (
     <span className="inline-flex items-center justify-end gap-[3px]">
       {money && <span className="text-[11px] text-faint">฿</span>}
-      <input
-        type="number"
+      <NumberField
         value={value}
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          onChange(Number.isNaN(v) ? 0 : v);
-        }}
+        onChange={onChange}
+        min={0}
         className="num w-[64px] rounded-[7px] border border-[#dde1e7] bg-card px-[7px] py-[5px] text-right text-[12px] text-ink"
       />
       {suffix && <span className="text-[11px] text-faint">{suffix}</span>}

@@ -2,6 +2,7 @@
 
 import { budgetSummary, scaleBudgetByPct, type CampaignState } from "@/lib/kpi";
 import { fmtMoney } from "@/lib/format";
+import { NumberField } from "@/components/ui/NumberField";
 import { usePerfColor } from "@/store/AppProvider";
 import type { Campaign, Product } from "@/data/types";
 
@@ -80,10 +81,10 @@ export function BudgetModal({
               <div className="mb-[5px] text-[10.5px] uppercase tracking-[0.04em] text-muted-2">
                 งบใหม่/วัน
               </div>
-              <input
-                type="number"
+              <NumberField
                 value={draft}
-                onChange={(e) => onSetDraft(Math.max(0, Math.round(parseFloat(e.target.value) || 0)))}
+                onChange={(v) => onSetDraft(Math.max(0, Math.round(v)))}
+                min={0}
                 className="num w-[140px] rounded-[10px] border-2 px-3 py-[10px] text-right text-[22px] font-bold text-ink"
                 style={{ borderColor: accent }}
               />

@@ -100,6 +100,13 @@ export const METRIC_DEFS: MetricDef[] = [
   { key: "cost", short: "Cost/วัน", dir: "max", money: true, suffix: "" },
 ];
 
+/** The KPIs the team actually configures + reviews: the campaign-table columns and the
+ *  Product-KPI page share this exact set. Excludes CPA and Cost/วัน. Single source of
+ *  truth — editing it updates both pages together. */
+export const KPI_METRIC_DEFS: MetricDef[] = METRIC_DEFS.filter(
+  (m) => m.key !== "cpa" && m.key !== "cost",
+);
+
 /** Categorical ramp (avatars, spend-share, charts). DESIGN §2. */
 export const RAMP = [
   "#16181d",
