@@ -59,67 +59,54 @@ export interface SyncResult {
   errors: string[];
 }
 
-/** Trigger a live Meta sync: pulls accounts → campaigns → insights and auto-links
- *  each campaign to a SKU by its Thai-name segment. Throws on failure. */
-export async function runMetaSync(): Promise<SyncResult> {
-  const res = await fetch("/api/sync", { method: "POST" });
-  const data = (await res.json().catch(() => ({}))) as Partial<SyncResult> & { error?: string };
+/** One SyncRun row (see lib/meta/syncState.ts) — the durable, polled sync state. */
+export interface SyncRunDto {
+  kind: "full" | "map" | "range" | "status";
+  rangeKey: string | null;
+  status: "idle" | "running" | "done" | "error";
+  pct: number;
+  stage: string;
+  counts: unknown; // SyncResult / RangeSyncResult once done
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  updatedAt: string;
+  stale: boolean; // running but the heartbeat stopped — treat as dead
+}
+
+export interface StartSyncResponse {
+  started?: boolean;
+  /** A live run of this kind is already in flight — adopt it instead of duplicating. */
+  alreadyRunning?: boolean;
+  run: SyncRunDto;
+}
+
+async function startSyncRequest(path: string): Promise<StartSyncResponse> {
+  const res = await fetch(path, { method: "POST" });
+  const data = (await res.json().catch(() => ({}))) as StartSyncResponse & { error?: string };
   if (!res.ok) throw new Error(data.error ?? `sync failed (${res.status})`);
-  return data as SyncResult;
+  return data;
 }
 
-type ProgressFn = (p: { stage: string; pct: number }) => void;
+/** Kick a full Meta sync in the background (server-detached — survives navigation).
+ *  Returns immediately; progress + the final result are polled via getSyncState(). */
+export const startFullSync = (): Promise<StartSyncResponse> => startSyncRequest("/api/sync/stream");
 
-/** Read an NDJSON sync stream: fire onProgress per stage, return the `done` result. */
-async function readSyncStream(res: Response, onProgress: ProgressFn): Promise<unknown> {
-  if (!res.ok || !res.body) throw new Error(`sync failed (${res.status})`);
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let result: unknown = null;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let nl: number;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      const msg = JSON.parse(line) as
-        | { type: "progress"; stage: string; pct: number }
-        | { type: "done"; result: unknown }
-        | { type: "error"; error: string };
-      if (msg.type === "progress") onProgress({ stage: msg.stage, pct: msg.pct });
-      else if (msg.type === "done") result = msg.result;
-      else if (msg.type === "error") throw new Error(msg.error);
-    }
-  }
-  return result;
-}
-
-/** Full Meta sync, streaming staged progress. Resolves with the final result. */
-export async function streamMetaSync(onProgress: ProgressFn): Promise<SyncResult> {
-  const res = await fetch("/api/sync/stream", { method: "POST" });
-  const result = await readSyncStream(res, onProgress);
-  if (!result) throw new Error("sync ended without a result");
-  return result as SyncResult;
-}
-
-/** On-demand sync for "today" / custom range, streaming staged progress. */
-export async function streamRangeSync(
+/** Kick an on-demand background sync for "today" / a custom range. */
+export function startRangeSync(
   range: string,
   custom: { since: string; until: string } | null,
-  onProgress: ProgressFn,
-): Promise<void> {
+): Promise<StartSyncResponse> {
   const q = new URLSearchParams({ range });
   if (custom) {
     q.set("since", custom.since);
     q.set("until", custom.until);
   }
-  const res = await fetch(`/api/sync/range?${q.toString()}`, { method: "POST" });
-  await readSyncStream(res, onProgress);
+  return startSyncRequest(`/api/sync/range?${q.toString()}`);
 }
+
+/** Current sync rows (one per kind). Poll only while a sync is known to be running. */
+export const getSyncState = () => getJSON<SyncRunDto[]>("/api/sync/state");
 
 /** Lightweight on/off status mirror from Meta (no insights). Best-effort — used by
  *  the Campaigns page on tab focus; the next poll/refetch catches up on error. */

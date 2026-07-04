@@ -1,50 +1,67 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { streamMetaSync } from "./api";
+import { startFullSync, startRangeSync, getSyncState, type SyncRunDto } from "./api";
 
-/** Build a Response whose body streams the given strings as UTF-8 chunks. */
-function streamResponse(chunks: string[]): Response {
-  const enc = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    start(c) {
-      for (const ch of chunks) c.enqueue(enc.encode(ch));
-      c.close();
-    },
-  });
-  return new Response(body, { status: 200 });
-}
+const jsonRes = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status });
+
+const run = (over: Partial<SyncRunDto> = {}): SyncRunDto => ({
+  kind: "full",
+  rangeKey: null,
+  status: "running",
+  pct: 0,
+  stage: "เริ่มซิงค์ · Starting…",
+  counts: null,
+  error: null,
+  startedAt: "2026-07-04T00:00:00.000Z",
+  finishedAt: null,
+  updatedAt: "2026-07-04T00:00:00.000Z",
+  stale: false,
+  ...over,
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("streamMetaSync", () => {
-  it("emits each progress event and resolves with the done result", async () => {
-    const lines = [
-      JSON.stringify({ type: "progress", stage: "accounts", pct: 2 }) + "\n",
-      JSON.stringify({ type: "progress", stage: "campaigns", pct: 40 }) + "\n",
-      JSON.stringify({ type: "done", result: { accounts: 2, campaigns: 9, errors: [] } }) + "\n",
-    ];
-    // split a line across chunk boundaries to exercise the buffering
-    const chunks = [lines[0] + lines[1].slice(0, 6), lines[1].slice(6) + lines[2]];
-    vi.stubGlobal("fetch", vi.fn(async () => streamResponse(chunks)));
-
-    const seen: { stage: string; pct: number }[] = [];
-    const result = await streamMetaSync((p) => seen.push(p));
-
-    expect(seen).toEqual([
-      { stage: "accounts", pct: 2 },
-      { stage: "campaigns", pct: 40 },
-    ]);
-    expect(result.accounts).toBe(2);
-    expect(result.campaigns).toBe(9);
+describe("start sync protocol", () => {
+  it("startFullSync resolves with the started run", async () => {
+    const fetchMock = vi.fn(async () => jsonRes({ started: true, run: run() }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await startFullSync();
+    expect(res.started).toBe(true);
+    expect(res.run.kind).toBe("full");
+    expect(fetchMock).toHaveBeenCalledWith("/api/sync/stream", { method: "POST" });
   });
 
-  it("throws when the stream sends an error event", async () => {
-    const chunks = [JSON.stringify({ type: "error", error: "No Meta token" }) + "\n"];
-    vi.stubGlobal("fetch", vi.fn(async () => streamResponse(chunks)));
-    await expect(streamMetaSync(() => {})).rejects.toThrow(/No Meta token/);
+  it("surfaces alreadyRunning so the caller adopts the in-flight run", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonRes({ alreadyRunning: true, run: run({ pct: 40 }) })));
+    const res = await startFullSync();
+    expect(res.alreadyRunning).toBe(true);
+    expect(res.run.pct).toBe(40);
   });
 
-  it("throws on a non-ok response", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 500 })));
-    await expect(streamMetaSync(() => {})).rejects.toThrow(/500/);
+  it("throws the server error message on a non-ok response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonRes({ error: "No Meta token" }, 400)));
+    await expect(startFullSync()).rejects.toThrow(/No Meta token/);
+  });
+
+  it("startRangeSync passes range + custom dates in the query", async () => {
+    const fetchMock = vi.fn(async () => jsonRes({ started: true, run: run({ kind: "range", rangeKey: "custom" }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    await startRangeSync("custom", { since: "2026-07-01", until: "2026-07-03" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sync/range?range=custom&since=2026-07-01&until=2026-07-03",
+      { method: "POST" },
+    );
+  });
+});
+
+describe("getSyncState", () => {
+  it("returns the sync rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonRes([run({ status: "done", pct: 100 })])),
+    );
+    const rows = await getSyncState();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("done");
   });
 });

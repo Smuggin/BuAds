@@ -1,9 +1,16 @@
 /**
- * On-demand streaming sync for "today" / custom ranges. Same NDJSON protocol as
- * /api/sync/stream. Query: ?range=today|custom[&since=YYYY-MM-DD&until=YYYY-MM-DD].
+ * On-demand background sync for "today" / custom ranges.
+ * Query: ?range=today|custom[&since=YYYY-MM-DD&until=YYYY-MM-DD].
  * Custom spans are clamped to MAX_RANGE_DAYS. Auth-gated.
+ *
+ * Claims the SyncRun lock, detaches the work with after() (survives the client
+ * navigating away), and returns immediately — the client polls /api/sync/state
+ * for progress. A second caller gets { alreadyRunning: true } and adopts the
+ * in-flight run instead of duplicating Meta calls.
  */
+import { after } from "next/server";
 import { syncRange } from "@/lib/meta/syncRange";
+import { claimSyncRun, finishSyncRun, makeRunProgressWriter } from "@/lib/meta/syncState";
 import { rangeToSpec, MAX_RANGE_DAYS } from "@/lib/windows";
 import { requireAuth } from "@/lib/auth/guard";
 
@@ -11,7 +18,7 @@ import { requireAuth } from "@/lib/auth/guard";
 const rawSpanDays = (since: string, until: string) =>
   Math.floor((Date.parse(until) - Date.parse(since)) / 86_400_000) + 1;
 
-export const maxDuration = 120;
+export const maxDuration = 120; // the after() work counts toward this budget
 
 export async function POST(req: Request) {
   const denied = await requireAuth();
@@ -36,25 +43,17 @@ export async function POST(req: Request) {
 
   const spec = rangeToSpec(range, since && until ? { since, until } : null);
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
-      try {
-        const result = await syncRange(spec, (p) => send({ type: "progress", ...p }));
-        send({ type: "done", result });
-      } catch (e) {
-        send({ type: "error", error: e instanceof Error ? e.message : String(e) });
-      } finally {
-        controller.close();
-      }
-    },
+  const { claimed, run } = await claimSyncRun("range", spec.key);
+  if (!claimed) return Response.json({ alreadyRunning: true, run });
+
+  after(async () => {
+    try {
+      const result = await syncRange(spec, makeRunProgressWriter("range"));
+      await finishSyncRun("range", { counts: result });
+    } catch (e) {
+      await finishSyncRun("range", { error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Cache-Control": "no-store, no-transform",
-    },
-  });
+  return Response.json({ started: true, run });
 }
