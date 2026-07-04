@@ -40,10 +40,37 @@ export interface OverviewData {
   };
 }
 
+// In-flight dedupe + last-good cache.
+// - inflight: concurrent identical GETs share one request (Overview and the KPI
+//   strip ask for the same /api/overview in the same tick — one HTTP call).
+// - lastGood: a re-mounting view paints its previous payload instantly via the
+//   peek* helpers (stale-while-revalidate) instead of flashing a skeleton.
+//   No TTL: peeks are only ever a first paint and are always revalidated by the
+//   caller's own fetch, so staleness is bounded by that refetch.
+const inflight = new Map<string, Promise<unknown>>();
+const lastGood = new Map<string, unknown>();
+
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
-  return res.json() as Promise<T>;
+  const existing = inflight.get(path);
+  if (existing) return existing as Promise<T>;
+  const p = (async () => {
+    try {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`${path} → ${res.status}`);
+      const data = (await res.json()) as T;
+      lastGood.set(path, data);
+      return data;
+    } finally {
+      inflight.delete(path);
+    }
+  })();
+  inflight.set(path, p);
+  return p;
+}
+
+/** Last successfully fetched payload for a path, or null (first-paint cache). */
+function peek<T>(path: string): T | null {
+  return lastGood.has(path) ? (lastGood.get(path) as T) : null;
 }
 
 export interface SyncResult {
@@ -210,9 +237,14 @@ export interface AccountOption {
 /** Connected ad accounts (synced from Meta) for the catalog account pickers. */
 export const getAccounts = () => getJSON<AccountOption[]>("/api/accounts");
 
+const overviewPath = (account = "all", range = "30d") =>
+  `/api/overview?account=${encodeURIComponent(account)}&range=${range}`;
 /** Account-scoped overview (account = metaAccountId | "all", range = 7d|30d|90d). */
 export const getOverview = (account = "all", range = "30d") =>
-  getJSON<OverviewData>(`/api/overview?account=${encodeURIComponent(account)}&range=${range}`);
+  getJSON<OverviewData>(overviewPath(account, range));
+/** Last overview payload for instant first paint (stale — always revalidate). */
+export const peekOverview = (account = "all", range = "30d") =>
+  peek<OverviewData>(overviewPath(account, range));
 /** Account-wide audience breakdown for the Breakdown page (range + account filter). */
 export const getBreakdown = (range: string, account: string) =>
   getJSON<BreakdownData>(`/api/breakdown?range=${range}&account=${encodeURIComponent(account)}`);
@@ -221,6 +253,8 @@ export const getBreakdown = (range: string, account: string) =>
 export const getBreakdownAccounts = (range: string) =>
   getJSON<string[]>(`/api/breakdown/accounts?range=${range}`);
 export const getProducts = () => getJSON<Product[]>("/api/products");
+/** Last products payload for instant first paint (stale — always revalidate). */
+export const peekProducts = () => peek<Product[]>("/api/products");
 
 export interface ProductInAccount {
   sku: string;
@@ -241,17 +275,28 @@ export const getProductBreakdown = (sku: string, account: string, range: string)
   getJSON<AudienceProfile | null>(
     `/api/breakdown/product?sku=${encodeURIComponent(sku)}&account=${encodeURIComponent(account)}&range=${range}`,
   );
-export const getCampaigns = (range = "30d", custom?: { since: string; until: string } | null) => {
+const campaignsPath = (range = "30d", custom?: { since: string; until: string } | null) => {
   const q = new URLSearchParams({ range });
   if (custom) {
     q.set("since", custom.since);
     q.set("until", custom.until);
   }
-  return getJSON<Campaign[]>(`/api/campaigns?${q.toString()}`);
+  return `/api/campaigns?${q.toString()}`;
 };
+export const getCampaigns = (range = "30d", custom?: { since: string; until: string } | null) =>
+  getJSON<Campaign[]>(campaignsPath(range, custom));
+/** Last campaigns payload for instant first paint (stale — always revalidate). */
+export const peekCampaigns = (range = "30d", custom?: { since: string; until: string } | null) =>
+  peek<Campaign[]>(campaignsPath(range, custom));
+
+const creativesPath = (range = "30d", account = "all") =>
+  `/api/creatives?range=${range}&account=${encodeURIComponent(account)}`;
 /** Post-deduped, 30d-gated creatives, scoped to the given account (metaAccountId | "all"). */
 export const getCreatives = (range = "30d", account = "all") =>
-  getJSON<Creative[]>(`/api/creatives?range=${range}&account=${encodeURIComponent(account)}`);
+  getJSON<Creative[]>(creativesPath(range, account));
+/** Last creatives payload for instant first paint (stale — always revalidate). */
+export const peekCreatives = (range = "30d", account = "all") =>
+  peek<Creative[]>(creativesPath(range, account));
 export const getRules = () => getJSON<Rule[]>("/api/rules");
 /** Persist a rule's on/off (the cron honors Rule.on). */
 export async function patchRule(id: string, on: boolean): Promise<void> {
@@ -291,6 +336,8 @@ export async function applyCampaignChanges(
 }
 
 export const getLogs = () => getJSON<LogEntry[]>("/api/logs");
+/** Last logs payload for instant first paint (stale — always revalidate). */
+export const peekLogs = () => peek<LogEntry[]>("/api/logs");
 export const getNotifications = () => getJSON<Notification[]>("/api/notifications");
 export const getCategories = () => getJSON<Category[]>("/api/categories");
 export const getSettings = () =>

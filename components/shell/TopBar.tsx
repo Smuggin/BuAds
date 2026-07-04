@@ -108,6 +108,19 @@ export function TopBar() {
     void applyRange("today").catch(() => {});
   }, [range, applyRange]);
 
+  // Ambient refresh: silently re-sync "today" every N minutes while the tab is
+  // visible, so the numbers stay fresh with zero interaction. The server-side
+  // SyncRun lock dedupes across tabs, so this can never double-sync. 0 disables.
+  useEffect(() => {
+    const mins = Number(process.env.NEXT_PUBLIC_AMBIENT_REFRESH_MIN ?? 10);
+    if (!Number.isFinite(mins) || mins <= 0 || range !== "today") return;
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void applyRange("today").catch(() => {});
+    }, mins * 60_000);
+    return () => clearInterval(interval);
+  }, [range, applyRange]);
+
   useEffect(() => {
     if (!onBreakdown) return;
     let alive = true;

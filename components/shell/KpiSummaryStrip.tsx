@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import { getOverview } from "@/lib/api";
+import { getOverview, peekOverview } from "@/lib/api";
 import { useAppStore } from "@/store/AppProvider";
 import { Icon } from "@/components/icons/Icon";
 import type { DeltaTone, SummaryCard } from "@/data/types";
@@ -18,7 +18,6 @@ const TONE: Record<DeltaTone, string> = {
  * the user has picked (persisted in the store / localStorage via visibleKpiKeys).
  */
 export function KpiSummaryStrip() {
-  const [all, setAll] = useState<SummaryCard[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const accountFilter = useAppStore((s) => s.accountFilter);
   const range = useAppStore((s) => s.range);
@@ -26,10 +25,13 @@ export function KpiSummaryStrip() {
   const rangeSyncTick = useAppStore((s) => s.rangeSyncTick);
   const visibleKeys = useAppStore((s) => s.visibleKpiKeys);
   const setVisibleKeys = useAppStore((s) => s.setVisibleKpiKeys);
+  // Paint the last payload instantly (stale-while-revalidate); the effect below
+  // always refetches. getJSON dedupes this against OverviewView's identical call.
+  const [all, setAll] = useState<SummaryCard[]>(() => peekOverview(accountFilter, range)?.summary ?? []);
 
   useEffect(() => {
     let alive = true;
-    getOverview(accountFilter, range).then((d) => alive && setAll(d.summary));
+    getOverview(accountFilter, range).then((d) => alive && setAll(d.summary)).catch(() => {});
     return () => {
       alive = false;
     };
