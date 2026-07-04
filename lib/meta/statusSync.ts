@@ -8,7 +8,6 @@ import { prisma } from "@/lib/db";
 import { graphGetAll } from "./client";
 import { getActiveToken } from "./auth";
 import { toAdStatus } from "./map";
-import { gatherAccounts } from "./sync";
 
 interface MetaCampaignStatus {
   id: string;
@@ -31,8 +30,12 @@ export async function syncCampaignStatuses(): Promise<StatusSyncResult> {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  for (const a of await gatherAccounts(token)) {
-    const actId = `act_${a.account_id}`;
+  // Targets come from the AdAccount mirror, NOT gatherAccounts() — this poller
+  // runs every ~120s plus on every tab focus, and the identity walk cost 3–8
+  // Graph calls each time for accounts we already know. New accounts enter the
+  // mirror via the full sync (runSync), which still gathers live.
+  for (const acc of await prisma.adAccount.findMany({ select: { metaAccountId: true } })) {
+    const actId = acc.metaAccountId;
     if (allow.length && !allow.includes(actId)) continue;
     try {
       const rows = await graphGetAll<MetaCampaignStatus>(
