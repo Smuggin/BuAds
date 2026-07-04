@@ -69,3 +69,68 @@ export async function assertWriteAllowed(
 
   return { actId, name: campaign.name };
 }
+
+/** Per-id verdict from the bulk guard: allowed (with the before-values the apply
+ *  route needs for mirroring + activity logs) or blocked with the reason. */
+export type BulkWriteEntry =
+  | {
+      allowed: true;
+      actId: string;
+      name: string;
+      status: "ACTIVE" | "PAUSED";
+      dailyBudgetMinor: number;
+    }
+  | { allowed: false; blocked: string };
+
+/**
+ * Bulk variant of assertWriteAllowed for the apply route: the same fail-closed
+ * checks, but the env gates run once and ALL campaigns resolve in one findMany
+ * (instead of a findUnique per change). Never throws — blocked ids carry their
+ * reason so the caller can return per-item errors without touching Meta.
+ */
+export async function assertWritesAllowedBulk(
+  metaCampaignIds: string[],
+): Promise<Map<string, BulkWriteEntry>> {
+  const out = new Map<string, BulkWriteEntry>();
+  const blockAll = (msg: string): Map<string, BulkWriteEntry> => {
+    for (const id of metaCampaignIds) out.set(id, { allowed: false, blocked: msg });
+    return out;
+  };
+
+  if (!writesEnabled()) {
+    return blockAll("Meta writes are disabled (set META_WRITES_ENABLED=on)");
+  }
+  const allow = writeAllowlist();
+  if (allow.length === 0) {
+    return blockAll("No write-allowlisted accounts — set META_AD_ACCOUNTS to the target act_ id(s)");
+  }
+
+  const rows = await prisma.campaign.findMany({
+    where: { metaCampaignId: { in: metaCampaignIds } },
+    include: { adAccount: true },
+  });
+  const byId = new Map(rows.map((c) => [c.metaCampaignId, c]));
+  for (const id of metaCampaignIds) {
+    const c = byId.get(id);
+    if (!c) {
+      out.set(id, { allowed: false, blocked: `Unknown campaign ${id} — refusing write` });
+      continue;
+    }
+    const actId = c.adAccount.metaAccountId;
+    if (!allow.includes(actId)) {
+      out.set(id, {
+        allowed: false,
+        blocked: `Account ${actId} is not in the write allowlist (META_AD_ACCOUNTS)`,
+      });
+      continue;
+    }
+    out.set(id, {
+      allowed: true,
+      actId,
+      name: c.name,
+      status: c.status,
+      dailyBudgetMinor: c.dailyBudgetMinor,
+    });
+  }
+  return out;
+}

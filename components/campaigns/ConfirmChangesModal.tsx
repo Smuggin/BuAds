@@ -94,6 +94,15 @@ export function ConfirmChangesModal({ changes, saving, results, onConfirm, onClo
                       </div>
                     )}
                   </div>
+                  {/* Budget moves >20% are a "significant edit" — Meta re-enters the
+                      learning phase. Informational only; the write is unchanged. */}
+                  {c.budgetTo !== undefined &&
+                    (c.budgetFrom ?? 0) > 0 &&
+                    Math.abs(c.budgetTo - c.budgetFrom!) / c.budgetFrom! > 0.2 && (
+                      <div className="mt-[5px] text-[11px] font-medium" style={{ color: "#c98a16" }}>
+                        ⚠ จะรีเซ็ตช่วงเรียนรู้ · Resets learning phase (&gt;20%)
+                      </div>
+                    )}
                   {res && !res.ok && res.error && (
                     <div className="mt-[5px] text-[11px] text-danger">{res.error}</div>
                   )}

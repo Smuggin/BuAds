@@ -6,7 +6,13 @@
  * Created per-provider-mount (see AppProvider) to stay SSR-safe.
  */
 import { createStore } from "zustand/vanilla";
-import { streamMetaSync, streamRangeSync, type SyncResult } from "@/lib/api";
+import {
+  getSyncState,
+  startFullSync,
+  startRangeSync,
+  type SyncResult,
+  type SyncRunDto,
+} from "@/lib/api";
 import type { CampFilters } from "@/lib/campaigns";
 import type {
   AccountKey,
@@ -297,30 +303,75 @@ export const initialAppState: AppState = {
   syncMap: {},
 };
 
+/** Poll cadence for the durable sync state (GET /api/sync/state). */
+const SYNC_POLL_MS = 2_500;
+
 export function createAppStore(init: Partial<AppState> = {}) {
-  return createStore<AppStore>()((set, get) => ({
+  // One poller per sync kind per tab. The server-side SyncRun row is the source
+  // of truth (the sync itself runs detached on the server); we mirror pct/stage
+  // into syncProgress and resolve with the terminal row when it lands.
+  const polls = new Map<string, Promise<SyncRunDto | null>>();
+
+  return createStore<AppStore>()((set, get) => {
+    const pollSync = (kind: "full" | "range"): Promise<SyncRunDto | null> => {
+      const existing = polls.get(kind);
+      if (existing) return existing;
+      const p = (async () => {
+        try {
+          for (;;) {
+            await new Promise((r) => setTimeout(r, SYNC_POLL_MS));
+            let runs: SyncRunDto[];
+            try {
+              runs = await getSyncState();
+            } catch {
+              continue; // transient poll failure — keep polling
+            }
+            const run = runs.find((r) => r.kind === kind) ?? null;
+            if (run && run.status === "running" && !run.stale) {
+              set({ syncProgress: { pct: run.pct, stage: run.stage } });
+              continue;
+            }
+            return run; // done | error | stale | idle | missing
+          }
+        } finally {
+          polls.delete(kind);
+        }
+      })();
+      polls.set(kind, p);
+      return p;
+    };
+
+    /** Terminal-state UI: bump the data tick on success, linger the full bar briefly. */
+    const settleProgress = (run: SyncRunDto | null): void => {
+      if (run?.status === "done") {
+        // bump the data tick so every read view (Overview chart, tables, …) refetches
+        // in place — the finished sync rewrote the windows behind the current view.
+        set((s) => ({
+          rangeSyncTick: s.rangeSyncTick + 1,
+          syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" },
+        }));
+        setTimeout(() => set((s) => (s.syncProgress?.pct === 100 ? { syncProgress: null } : {})), 1200);
+      } else {
+        set({ syncProgress: null });
+      }
+    };
+
+    return {
     ...initialAppState,
     visibleKpiKeys: loadKpiKeys(),
     ...init,
 
     startSync: async () => {
-      if (get().syncProgress) throw new Error("sync already running");
-      set({ syncProgress: { pct: 0, stage: "เริ่มซิงค์ · Starting…" } });
-      try {
-        const result = await streamMetaSync((p) => set({ syncProgress: p }));
-        // bump the data tick so every read view (Overview chart, tables, …) refetches
-        // in place — a full sync rewrites the preset windows behind the current view.
-        set((s) => ({
-          rangeSyncTick: s.rangeSyncTick + 1,
-          syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" },
-        }));
-        // let the finished bar linger briefly, then clear (unless a new sync started)
-        setTimeout(() => set((s) => (s.syncProgress?.pct === 100 ? { syncProgress: null } : {})), 1600);
-        return result;
-      } catch (e) {
+      // Never throws on a concurrent sync anymore: alreadyRunning → adopt it.
+      const { run: initial } = await startFullSync();
+      set({ syncProgress: { pct: initial.pct, stage: initial.stage } });
+      const run = await pollSync("full");
+      if (!run || run.status !== "done" || !run.counts) {
         set({ syncProgress: null });
-        throw e;
+        throw new Error(run?.error ?? "การซิงค์หยุดกลางคัน · Sync was interrupted");
       }
+      settleProgress(run);
+      return run.counts as SyncResult;
     },
 
     setAccent: (accent) => set({ accent }),
@@ -335,21 +386,26 @@ export function createAppStore(init: Partial<AppState> = {}) {
       }
       const c = range === "custom" ? custom ?? null : null;
       // Cache-first: flip the view immediately so the last cached snapshot for this
-      // range renders while a fresh sync runs in the background — never block the UI
-      // on a live Meta call. rangeSyncTick bumps on completion to pull the new data.
+      // range renders while a fresh sync runs detached on the server — never block
+      // the UI on a live Meta call. rangeSyncTick bumps on completion to pull the
+      // new data. If a range sync is already in flight (boot refresh, another tab),
+      // the server says alreadyRunning and we adopt its progress instead.
       set({ range, customRange: c });
-      if (get().syncProgress) return; // a sync is already running
-      set({ syncProgress: { pct: 0, stage: "เริ่มซิงค์ · Starting…" } });
-      try {
-        await streamRangeSync(range, c, (p) => set({ syncProgress: p }));
-        set((s) => ({
-          rangeSyncTick: s.rangeSyncTick + 1,
-          syncProgress: { pct: 100, stage: "เสร็จสิ้น · Done" },
-        }));
-        setTimeout(() => set((s) => (s.syncProgress?.pct === 100 ? { syncProgress: null } : {})), 1200);
-      } catch (e) {
+      const { run: initial } = await startRangeSync(range, c);
+      set({ syncProgress: { pct: initial.pct, stage: initial.stage } });
+      const run = await pollSync("range");
+      if (run?.status === "error") {
         set({ syncProgress: null });
-        throw e;
+        throw new Error(run.error ?? "ซิงค์ไม่สำเร็จ · Sync failed");
+      }
+      settleProgress(run);
+      // If the user flipped to a different on-demand range while the adopted run
+      // was in flight, that key is still stale — sync it now (the server lock
+      // dedupes if several waiters re-kick at once).
+      const s = get();
+      const wantKey = s.range === "today" ? "today" : s.range === "custom" ? "custom" : null;
+      if (wantKey && run?.status === "done" && run.rangeKey !== wantKey) {
+        void s.applyRange(s.range, s.customRange ?? undefined).catch(() => {});
       }
     },
     setAccountFilter: (accountFilter) => set({ accountFilter }),
@@ -522,5 +578,6 @@ export function createAppStore(init: Partial<AppState> = {}) {
       set((s) => ({ connOverride: { ...s.connOverride, [id]: false } })),
     resyncAccount: (id) =>
       set((s) => ({ syncMap: { ...s.syncMap, [id]: "เมื่อสักครู่" } })),
-  }));
+    };
+  });
 }

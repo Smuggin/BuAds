@@ -358,3 +358,21 @@ model Notification {
   createdAt DateTime  @default(now())
   readAt    DateTime?
 }
+
+// Durable sync state — one row per kind. The UNIQUE(kind) row is both a cross-tab /
+// cross-instance lock (claimed with an atomic conditional update) and the progress
+// record the client polls while a detached background sync runs. `updatedAt` is the
+// liveness heartbeat: a "running" row that stops updating is treated as stale.
+model SyncRun {
+  id         String    @id @default(cuid())
+  kind       String    @unique // full | map | range | status
+  rangeKey   String? // today | custom (kind=range)
+  status     String    @default("idle") // idle | running | done | error
+  pct        Int       @default(0)
+  stage      String    @default("")
+  counts     Json? // SyncResult / RangeSyncResult once done
+  error      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  updatedAt  DateTime  @updatedAt
+}

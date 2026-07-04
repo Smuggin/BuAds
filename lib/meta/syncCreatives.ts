@@ -7,7 +7,7 @@
  * Coverage = every creative; metrics are delivery-driven (last 30d). Server-only.
  */
 import { prisma } from "@/lib/db";
-import { graphGet, graphGetAll, mapPool } from "./client";
+import { graphBatch, graphGetAll } from "./client";
 import {
   aggregateInsights,
   buildAudienceProfile,
@@ -103,25 +103,55 @@ export async function syncCreatives(
   ]);
   const insByAdByWindow = new Map<string, Map<string, MetaInsightRow>>(insWindowEntries);
 
-  // C. resolve distinct posts by unique id (best-effort, deduped, capped). Fetch with a
-  //    bounded pool instead of one-at-a-time; kept per-id (not a batched ?ids= read) so
-  //    a single unreachable post can't sink the rest of the batch.
+  // C. resolve distinct posts by unique id (best-effort, deduped, capped).
+  //    Incremental: post data is near-immutable display content, so story ids we
+  //    already resolved in a previous sync are seeded from the DB and NOT
+  //    refetched — after the first full sync only NEW posts hit the API (the
+  //    actual quota saver). The remainder goes through the Graph batch endpoint
+  //    (≤50 per HTTP call), which keeps the old per-id error isolation: one
+  //    unreachable post can't sink its siblings. Trade-off (accepted): an edited
+  //    post message won't refresh once stored — the data is display-only.
   const storyIds = new Set<string>();
   for (const ad of ads) {
     const sid = ad.creative?.effective_object_story_id ?? ad.creative?.object_story_id;
     if (sid) storyIds.add(sid);
   }
   const posts = new Map<string, MetaPost>();
-  await mapPool([...storyIds].slice(0, MAX_POSTS_PER_ACCOUNT), 6, async (sid) => {
+  if (storyIds.size) {
     try {
-      posts.set(
-        sid,
-        await graphGet<MetaPost>(`/${sid}`, { fields: "permalink_url,message,full_picture" }, token),
-      );
-    } catch {
-      /* post not reachable (permissions / deleted) — degrade gracefully */
+      const known = await prisma.creative.findMany({
+        where: { metaPostId: { in: [...storyIds] }, permalinkUrl: { not: null } },
+        select: { metaPostId: true, permalinkUrl: true, caption: true, previewImageUrl: true },
+      });
+      for (const k of known) {
+        if (k.metaPostId && !posts.has(k.metaPostId)) {
+          posts.set(k.metaPostId, {
+            permalink_url: k.permalinkUrl ?? undefined,
+            message: k.caption ?? undefined,
+            full_picture: k.previewImageUrl ?? undefined,
+          });
+        }
+      }
+      const missing = [...storyIds].filter((sid) => !posts.has(sid)).slice(0, MAX_POSTS_PER_ACCOUNT);
+      if (missing.length) {
+        const fetched = await graphBatch<MetaPost>(
+          missing.map((sid) => ({
+            method: "GET" as const,
+            relative_url: `${sid}?fields=permalink_url,message,full_picture`,
+          })),
+          token,
+        );
+        missing.forEach((sid, i) => {
+          const r = fetched[i];
+          // !ok → post not reachable (permissions / deleted) — degrade gracefully
+          if (r?.ok && r.data) posts.set(sid, r.data);
+        });
+      }
+    } catch (e) {
+      // resolution is an enhancement — captions fall back to creative names
+      result.errors.push(`posts ${actId}: ${e instanceof Error ? e.message : String(e)}`);
     }
-  });
+  }
 
   // Group ads by creative id (one page row per creative, deduped across campaigns).
   const groups = new Map<string, { creative: MetaCreativeObj; ads: MetaAd[] }>();

@@ -15,7 +15,7 @@
 import { prisma } from "@/lib/db";
 import { getActiveToken } from "./auth";
 import { graphGet, graphGetAll } from "./client";
-import { gatherAccounts, INSIGHT_FIELDS } from "./sync";
+import { INSIGHT_FIELDS } from "./sync";
 import { AD_INSIGHT_FIELDS } from "./syncCreatives";
 import { aggregateInsights, hourIndex24, insightMetrics, pickRoas, type MetaInsightRow } from "./map";
 import { fetchAdSetDailyBudgets, effectiveDailyBudget } from "./budget";
@@ -115,16 +115,20 @@ export async function syncRange(
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const targets = (await gatherAccounts(token)).filter(
-    (a) => !allow.length || allow.includes(`act_${a.account_id}`),
-  );
   const result: RangeSyncResult = { window: spec.key, accounts: 0, campaigns: 0, creatives: 0, errors: [] };
-  const total = Math.max(1, targets.length);
 
   // Preload DB once (avoids per-row round-trips inside the loop).
   const accountByActId = new Map(
     (await prisma.adAccount.findMany()).map((a) => [a.metaAccountId, a]),
   );
+  // Targets come from the AdAccount mirror, NOT gatherAccounts() — that identity
+  // walk (/me/adaccounts, /me/businesses + 2 edges each) cost 3–8 Graph calls on
+  // EVERY range flip for accounts we already know. Discovery of brand-new
+  // accounts stays with the full sync (runSync), which still gathers live.
+  const targets = [...accountByActId.values()].filter(
+    (a) => !allow.length || allow.includes(a.metaAccountId),
+  );
+  const total = Math.max(1, targets.length);
   const campByMetaId = new Map(
     (
       await prisma.campaign.findMany({
@@ -142,11 +146,9 @@ export async function syncRange(
   let cursor = 0;
   const worker = async () => {
     while (cursor < targets.length) {
-      const a = targets[cursor++];
-      const actId = `act_${a.account_id}`;
-      const account = accountByActId.get(actId);
+      const account = targets[cursor++];
+      const actId = account.metaAccountId;
       try {
-        if (!account) continue; // never synced — run a full sync first
 
         // Meta calls in parallel: per-campaign insights, account daily spend, the
         // ad-level pass (ad→creative map + ad insights) that powers per-creative

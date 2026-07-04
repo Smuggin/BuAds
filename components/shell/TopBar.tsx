@@ -99,12 +99,26 @@ export function TopBar() {
 
   // The app boots on "today", but that window is only synced on demand (the
   // nightly schedule covers 7/30/90d) — refresh it once so the first paint
-  // isn't yesterday's snapshot. applyRange no-ops if a sync is already running.
+  // isn't yesterday's snapshot. The sync runs detached on the server; if one is
+  // already in flight (another tab), the server dedupes and we adopt its progress.
   const bootRefreshed = useRef(false);
   useEffect(() => {
     if (bootRefreshed.current || range !== "today") return;
     bootRefreshed.current = true;
     void applyRange("today").catch(() => {});
+  }, [range, applyRange]);
+
+  // Ambient refresh: silently re-sync "today" every N minutes while the tab is
+  // visible, so the numbers stay fresh with zero interaction. The server-side
+  // SyncRun lock dedupes across tabs, so this can never double-sync. 0 disables.
+  useEffect(() => {
+    const mins = Number(process.env.NEXT_PUBLIC_AMBIENT_REFRESH_MIN ?? 10);
+    if (!Number.isFinite(mins) || mins <= 0 || range !== "today") return;
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void applyRange("today").catch(() => {});
+    }, mins * 60_000);
+    return () => clearInterval(interval);
   }, [range, applyRange]);
 
   useEffect(() => {
@@ -158,9 +172,8 @@ export function TopBar() {
                   key={r.id}
                   type="button"
                   aria-pressed={on}
-                  disabled={syncing}
                   onClick={() => pick(r.id)}
-                  className={`num rounded-[7px] px-3 py-[5px] text-[12px] font-semibold transition-colors duration-bg disabled:opacity-50 ${
+                  className={`num rounded-[7px] px-3 py-[5px] text-[12px] font-semibold transition-colors duration-bg ${
                     on ? "bg-ink text-white" : "bg-transparent text-muted"
                   }`}
                 >
@@ -171,10 +184,9 @@ export function TopBar() {
             <button
               type="button"
               aria-pressed={range === "custom"}
-              disabled={syncing}
               onClick={openPicker}
               title="ช่วงเวลากำหนดเอง · Custom range"
-              className={`num rounded-[7px] px-3 py-[5px] text-[12px] font-semibold transition-colors duration-bg disabled:opacity-50 ${
+              className={`num rounded-[7px] px-3 py-[5px] text-[12px] font-semibold transition-colors duration-bg ${
                 range === "custom" ? "bg-ink text-white" : "bg-transparent text-muted"
               }`}
             >
@@ -182,6 +194,12 @@ export function TopBar() {
                 ? `${fmtShort(customRange.since)}–${fmtShort(customRange.until)}`
                 : "กำหนดเอง"}
             </button>
+            {syncing && (
+              <span
+                title="กำลังซิงค์ · Syncing"
+                className="mx-[6px] h-[6px] w-[6px] shrink-0 animate-pulse self-center rounded-full bg-success"
+              />
+            )}
           </div>
 
           {pickerOpen && (

@@ -9,6 +9,10 @@ import {
   getCreatives,
   getLogs,
   getProducts,
+  peekCampaigns,
+  peekCreatives,
+  peekLogs,
+  peekProducts,
   runStatusSync,
   type CampaignChange,
   type CampaignChangeResult,
@@ -87,10 +91,16 @@ const FILTER_VALUE_LABEL: Record<string, string> = {
 };
 
 export function CampaignsView() {
-  const [products, setProducts] = useState<Product[] | null>(null);
-  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
-  const [creatives, setCreatives] = useState<Creative[] | null>(null);
-  const [logs, setLogs] = useState<LogEntry[] | null>(null);
+  // Range first — the data states below seed from the (range-keyed) peek cache.
+  const range = useAppStore((s) => s.range);
+  const customRange = useAppStore((s) => s.customRange);
+
+  // Paint the last payloads instantly (stale-while-revalidate); the effect below
+  // always refetches. Skeleton only on a true first-ever load.
+  const [products, setProducts] = useState<Product[] | null>(() => peekProducts());
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(() => peekCampaigns(range, customRange));
+  const [creatives, setCreatives] = useState<Creative[] | null>(() => peekCreatives(range));
+  const [logs, setLogs] = useState<LogEntry[] | null>(() => peekLogs());
   const [assigning, setAssigning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveResults, setSaveResults] = useState<CampaignChangeResult[] | null>(null);
@@ -115,8 +125,6 @@ export function CampaignsView() {
   const historyModal = useAppStore((s) => s.historyModal);
   const creativeOpen = useAppStore((s) => s.creativeOpen);
   const accountFilter = useAppStore((s) => s.accountFilter);
-  const range = useAppStore((s) => s.range);
-  const customRange = useAppStore((s) => s.customRange);
   const rangeSyncTick = useAppStore((s) => s.rangeSyncTick);
 
   const setGroupBy = useAppStore((s) => s.setGroupBy);
@@ -146,15 +154,17 @@ export function CampaignsView() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getProducts(), getCampaigns(range, customRange), getCreatives(range), getLogs()]).then(
-      ([p, c, cr, l]) => {
+    Promise.all([getProducts(), getCampaigns(range, customRange), getCreatives(range), getLogs()])
+      .then(([p, c, cr, l]) => {
         if (!alive) return;
         setProducts(p);
         setCampaigns(c);
         setCreatives(cr);
         setLogs(l);
-      },
-    );
+      })
+      // a failed fetch must not leave an unhandled rejection (and a permanent
+      // skeleton) — the cached paint stays up and the next tick retries
+      .catch(() => {});
     return () => {
       alive = false;
     };
