@@ -91,10 +91,6 @@ export function SettingsView() {
   const catCount = (c: string) =>
     [...products, ...customProducts].filter((p) => effProduct(p, prodEdits).category.toLowerCase() === c.toLowerCase()).length;
 
-  const av = (color: string) => ({
-    background: color,
-  });
-
   const reload = () =>
     Promise.all([getSettings(), getProducts()]).then(([s, p]) => {
       setData(s);
@@ -144,9 +140,6 @@ export function SettingsView() {
               <div className="flex flex-col gap-2">
                 {available.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 rounded-[10px] border border-border-2 p-3">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] text-[13px] font-semibold text-white" style={av(a.color)}>
-                      {a.initials}
-                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold text-ink">{a.name}</div>
                       <div className="num text-[11px] text-muted-2">{a.platform}</div>
@@ -168,9 +161,6 @@ export function SettingsView() {
                 const sync = syncMap[a.id] ?? a.lastSync;
                 return (
                   <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-[10px] border border-border-2 p-3">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] text-[13px] font-semibold text-white" style={av(a.color)}>
-                      {a.initials}
-                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-ink">{a.name}</span>
