@@ -1,7 +1,7 @@
 "use client";
 
 import { accountMetaFor, FORMAT_META } from "@/lib/constants";
-import { fmtK, fmtMetric, fmtMoney, round1 } from "@/lib/format";
+import { fmtK, fmtMetric, fmtMoney } from "@/lib/format";
 import { evalCampaign, resolveCampaignState } from "@/lib/kpi";
 import { effCloseMode, effScaleThresholds, effSkipMetrics, effThresholds } from "@/lib/resolvers";
 import { usePerfColor } from "@/store/AppProvider";
@@ -35,18 +35,18 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, prodSca
   const product = products.find((p) => p.sku === creative.sku);
   const preview = creative.previewImageUrl ?? creative.thumbnailUrl;
   const vid = creative.video;
-  const eng = creative.engagement;
   const hasVideo = !!vid && vid.plays3s > 0;
-  const hasEng = !!eng && eng.reactions + eng.comments + eng.shares + eng.saves > 0;
+  const revenue = creative.revenue ?? creative.spend * creative.roas;
 
   const tiles = [
-    { l: "Spend", v: fmtMoney(creative.spend) },
+    { l: "CTR รวม", v: fmtMetric("ctr", creative.ctr) },
+    { l: "CPM", v: fmtMoney(creative.cpm ?? 0) },
+    { l: "Reach", v: fmtK(creative.reach ?? 0) },
+    { l: "งบที่จ่าย", v: fmtMoney(creative.spend) },
+    { l: "ยอดขาย", v: fmtMoney(revenue) },
+    { l: "ต้นทุนซื้อ", v: fmtMoney(creative.cpa) },
     { l: "ROAS", v: fmtMetric("roas", creative.roas), color: pc(creative.roas) },
-    { l: "CTR", v: fmtMetric("ctr", creative.ctr) },
-    { l: "Purchases", v: String(creative.purchases) },
-    { l: "CPA", v: fmtMoney(creative.cpa) },
-    { l: "Impr.", v: fmtK(creative.impressions) },
-    { l: "Freq.", v: String(round1(creative.frequency)) },
+    { l: "Impression", v: fmtK(creative.impressions) },
   ];
 
   // Only render campaigns we can fully resolve: a creative may link to a campaign
@@ -117,7 +117,7 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, prodSca
       </div>
 
       {/* KPI tiles */}
-      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2 sm:grid-cols-4 lg:grid-cols-8">
         {tiles.map((t) => (
           <div key={t.l} className="bg-card px-3 py-[11px]">
             <div className="text-[10px] uppercase tracking-[0.03em] text-muted-2">{t.l}</div>
@@ -131,73 +131,28 @@ export function CreativeDetail({ creative, products, campaigns, prodThr, prodSca
         ))}
       </div>
 
-      {/* creative breakdown — does it actually work? (video funnel + post engagement) */}
-      {(hasVideo || hasEng) && (
+      {/* video views — 3s plays + watch-through milestones */}
+      {hasVideo && vid && (
         <div>
           <div className="mb-3 text-[12px] font-semibold text-slate">
-            ครีเอทีฟทำงานไหม · Creative breakdown
+            การดูวิดีโอ · Video views
           </div>
-          <div className="flex flex-col gap-4 rounded-[10px] border border-border-2 p-4">
-            {hasVideo && vid && (
-              <>
-                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-border-2 bg-border-2 sm:grid-cols-4">
-                  {[
-                    { l: "Hook rate", s: "3 วิ · 3s", v: round1(vid.hookRate) + "%" },
-                    { l: "Hold rate", s: "ดูจบ · ThruPlay", v: round1(vid.holdRate) + "%" },
-                    { l: "Avg watch", s: "เฉลี่ย · avg", v: round1(vid.avgWatchSec) + "s" },
-                    { l: "3s plays", s: "เริ่มดู · started", v: fmtK(vid.plays3s) },
-                  ].map((t) => (
-                    <div key={t.l} className="bg-card px-3 py-[10px]">
-                      <div className="text-[10px] uppercase tracking-[0.03em] text-muted-2">{t.l}</div>
-                      <div className="num text-[17px] font-semibold tracking-[-0.02em] text-ink">{t.v}</div>
-                      <div className="text-[10px] text-faint">{t.s}</div>
-                    </div>
-                  ))}
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-border-2 bg-border-2 sm:grid-cols-3 lg:grid-cols-5">
+            {[
+              { l: "ดูวิดีโอ 3 วิ", s: "3 วิ · 3s", v: fmtK(vid.plays3s), n: null },
+              { l: "ดู 25%", s: null, v: fmtK(vid.p25), n: vid.p25 },
+              { l: "ดู 50%", s: null, v: fmtK(vid.p50), n: vid.p50 },
+              { l: "ดู 75%", s: null, v: fmtK(vid.p75), n: vid.p75 },
+              { l: "ดู 100%", s: "จบ · complete", v: fmtK(vid.p100), n: vid.p100 },
+            ].map((t) => (
+              <div key={t.l} className="bg-card px-3 py-[11px]">
+                <div className="text-[10px] uppercase tracking-[0.03em] text-muted-2">{t.l}</div>
+                <div className="num text-[17px] font-semibold tracking-[-0.02em] text-ink">{t.v}</div>
+                <div className="text-[10px] text-faint">
+                  {t.n != null && vid.plays3s ? Math.round((t.n / vid.plays3s) * 100) + "% ของ 3 วิ" : t.s}
                 </div>
-                <div>
-                  <div className="mb-[10px] text-[11px] font-semibold text-slate">
-                    อัตราการดูต่อ · Retention (% of 3s plays)
-                  </div>
-                  <div className="flex flex-col gap-[9px]">
-                    {[
-                      { l: "25%", v: vid.p25 },
-                      { l: "50%", v: vid.p50 },
-                      { l: "75%", v: vid.p75 },
-                      { l: "100%", v: vid.p100 },
-                    ].map((r) => {
-                      const pct = vid.plays3s ? (r.v / vid.plays3s) * 100 : 0;
-                      return (
-                        <div key={r.l} className="flex items-center gap-[10px]">
-                          <span className="w-[44px] flex-shrink-0 text-[11.5px] text-ink-2">{r.l}</span>
-                          <div className="flex flex-1 items-center gap-2">
-                            <div
-                              className="h-2 min-w-[4px] rounded-[5px] bg-accent"
-                              style={{ width: `${Math.min(pct, 100)}%` }}
-                            />
-                            <span className="num text-[11px] font-semibold text-ink">{Math.round(pct)}%</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-            {hasEng && eng && (
-              <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-border-2 bg-border-2 sm:grid-cols-4">
-                {[
-                  { l: "Reactions", v: eng.reactions },
-                  { l: "Comments", v: eng.comments },
-                  { l: "Shares", v: eng.shares },
-                  { l: "Saves", v: eng.saves },
-                ].map((t) => (
-                  <div key={t.l} className="bg-card px-3 py-[10px]">
-                    <div className="text-[10px] uppercase tracking-[0.03em] text-muted-2">{t.l}</div>
-                    <div className="num text-[17px] font-semibold tracking-[-0.02em] text-ink">{fmtK(t.v)}</div>
-                  </div>
-                ))}
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}

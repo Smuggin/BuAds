@@ -102,6 +102,10 @@ export interface Creative {
   cpa: number;
   purchases: number;
   frequency: number;
+  // Live-synced extras (absent on the legacy mock seed — treat as optional).
+  reach?: number;
+  cpm?: number;
+  revenue?: number; // spend × ROAS
   // From the synced post / ad (optional — absent on mock + zero-delivery creatives).
   thumbnailUrl?: string;
   previewImageUrl?: string;
