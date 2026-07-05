@@ -213,6 +213,7 @@ export interface OverviewAccountRow {
   ctr: string;
   status: "Active" | "Paused";
   rawSpend: number;
+  color: string; // account color, same source as the daily-spend chart (accountMetaFor)
 }
 
 export type ConnStatus = "active" | "syncing" | "warning";

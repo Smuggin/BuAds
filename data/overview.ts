@@ -22,12 +22,12 @@ export const DAILY_SPEND: number[] = [
 
 /** Ad-accounts table (display rows + raw spend for share math). */
 export const OVERVIEW_ACCOUNTS: OverviewAccountRow[] = [
-  { name: "ร้านหลัก TH", platform: "Main Store · FB+IG", initials: "TH", spend: "฿84,200", revenue: "฿412,000", roas: "4.89x", purchases: "612", cpa: "฿137", ctr: "2.10%", status: "Active", rawSpend: 84200 },
-  { name: "Skincare Brand", platform: "Beauty · FB+IG", initials: "SK", spend: "฿62,400", revenue: "฿318,000", roas: "5.10x", purchases: "388", cpa: "฿161", ctr: "1.94%", status: "Active", rawSpend: 62400 },
-  { name: "Bangkok Retail", platform: "Retail · FB", initials: "BK", spend: "฿48,900", revenue: "฿196,000", roas: "4.01x", purchases: "274", cpa: "฿178", ctr: "1.66%", status: "Active", rawSpend: 48900 },
-  { name: "Lazada Push", platform: "Marketplace · FB", initials: "LZ", spend: "฿41,200", revenue: "฿188,500", roas: "4.58x", purchases: "301", cpa: "฿137", ctr: "1.88%", status: "Active", rawSpend: 41200 },
-  { name: "Shopee Promo", platform: "Marketplace · FB", initials: "SP", spend: "฿33,800", revenue: "฿142,000", roas: "4.20x", purchases: "198", cpa: "฿171", ctr: "1.55%", status: "Paused", rawSpend: 33800 },
-  { name: "Fashion Line", platform: "Apparel · IG", initials: "FL", spend: "฿14,000", revenue: "฿61,500", roas: "4.39x", purchases: "74", cpa: "฿189", ctr: "1.40%", status: "Active", rawSpend: 14000 },
+  { name: "ร้านหลัก TH", platform: "Main Store · FB+IG", initials: "TH", spend: "฿84,200", revenue: "฿412,000", roas: "4.89x", purchases: "612", cpa: "฿137", ctr: "2.10%", status: "Active", rawSpend: 84200, color: "#16181d" },
+  { name: "Skincare Brand", platform: "Beauty · FB+IG", initials: "SK", spend: "฿62,400", revenue: "฿318,000", roas: "5.10x", purchases: "388", cpa: "฿161", ctr: "1.94%", status: "Active", rawSpend: 62400, color: "#3b6fe0" },
+  { name: "Bangkok Retail", platform: "Retail · FB", initials: "BK", spend: "฿48,900", revenue: "฿196,000", roas: "4.01x", purchases: "274", cpa: "฿178", ctr: "1.66%", status: "Active", rawSpend: 48900, color: "#e0813b" },
+  { name: "Lazada Push", platform: "Marketplace · FB", initials: "LZ", spend: "฿41,200", revenue: "฿188,500", roas: "4.58x", purchases: "301", cpa: "฿137", ctr: "1.88%", status: "Active", rawSpend: 41200, color: "#1f8a5b" },
+  { name: "Shopee Promo", platform: "Marketplace · FB", initials: "SP", spend: "฿33,800", revenue: "฿142,000", roas: "4.20x", purchases: "198", cpa: "฿171", ctr: "1.55%", status: "Paused", rawSpend: 33800, color: "#d64545" },
+  { name: "Fashion Line", platform: "Apparel · IG", initials: "FL", spend: "฿14,000", revenue: "฿61,500", roas: "4.39x", purchases: "74", cpa: "฿189", ctr: "1.40%", status: "Active", rawSpend: 14000, color: "#6E56CF" },
 ];
 
 /** Account-level audience breakdown (Breakdown page). */
