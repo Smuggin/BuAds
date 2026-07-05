@@ -43,17 +43,9 @@ export function CampaignGroupTable({
     <Card className="overflow-hidden">
       {/* group header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-2 px-[18px] py-[14px]">
-        <div className="flex items-center gap-[11px]">
-          <div
-            className="num flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-input text-[10px] font-semibold text-white"
-            style={{ background: group.color }}
-          >
-            {group.initials}
-          </div>
-          <div className="leading-[1.25]">
-            <div className="text-[14px] font-semibold text-ink">{group.title}</div>
-            <div className="text-[11.5px] text-muted-2">{group.subtitle}</div>
-          </div>
+        <div className="leading-[1.25]">
+          <div className="text-[14px] font-semibold text-ink">{group.title}</div>
+          <div className="text-[11.5px] text-muted-2">{group.subtitle}</div>
         </div>
         <div className="flex flex-wrap items-center gap-[10px]">
           <span className="num text-[11.5px] text-muted">

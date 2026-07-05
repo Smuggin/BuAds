@@ -1,9 +1,7 @@
 import { Card } from "@/components/ui/Card";
-import { RAMP } from "@/lib/constants";
 import type { OverviewAccountRow } from "@/data/types";
 
 const MAX_ROWS = 6; // keep the list ~as tall as the Daily-spend card; rest collapse to "+N"
-const rampColor = (i: number) => RAMP[i % RAMP.length];
 
 /** Spend-share stacked bar + legend. Only accounts that actually spent are shown,
  *  ranked by contribution; the long tail collapses into a faint "+ N เพิ่มเติม". */
@@ -27,8 +25,8 @@ export function SpendShareCard({ accounts }: { accounts: OverviewAccountRow[] })
 
       {/* stacked bar: shown segments + one faint segment for the collapsed tail */}
       <div className="mb-[18px] flex h-[13px] gap-[2px] overflow-hidden rounded-[7px]">
-        {shown.map((a, i) => (
-          <div key={a.name} style={{ width: `${(a.rawSpend / total) * 100}%`, background: rampColor(i) }} />
+        {shown.map((a) => (
+          <div key={a.name} style={{ width: `${(a.rawSpend / total) * 100}%`, background: a.color }} />
         ))}
         {hiddenSpend > 0 && (
           <div style={{ width: `${(hiddenSpend / total) * 100}%`, background: "#e4e7ec" }} />
@@ -37,11 +35,11 @@ export function SpendShareCard({ accounts }: { accounts: OverviewAccountRow[] })
       </div>
 
       <div className="flex flex-col gap-[11px]">
-        {shown.map((a, i) => (
+        {shown.map((a) => (
           <div key={a.name} className="flex items-center gap-[9px]">
             <span
               className="h-[10px] w-[10px] flex-shrink-0 rounded-[3px]"
-              style={{ background: rampColor(i) }}
+              style={{ background: a.color }}
             />
             <span className="flex-1 truncate text-[12.5px] text-ink-2">{a.name}</span>
             <span className="num text-[12px] text-ink">{a.spend}</span>

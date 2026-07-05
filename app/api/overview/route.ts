@@ -48,6 +48,8 @@ export async function GET(req: Request) {
       spend: baht(spend), revenue: baht(rev), roas: fmtMetric("roas", roas),
       purchases: String(pur), cpa: baht(cpa), ctr: fmtMetric("ctr", ctr),
       status: a.status === "ACTIVE" ? "Active" : "Paused", rawSpend: Math.round(spend) || 0,
+      // Same color the daily-spend chart uses, so the spend-share legend matches the bars.
+      color: accountMetaFor(a.metaAccountId, a.name).color,
     };
   });
 

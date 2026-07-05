@@ -1,16 +1,46 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
-import { RAMP } from "@/lib/constants";
 import { usePerfColor } from "@/store/AppProvider";
 import type { OverviewAccountRow } from "@/data/types";
 
-const HEAD = "px-[14px] py-[10px] text-right font-semibold";
+type SortKey = "name" | "spend" | "revenue" | "roas" | "purchases" | "cpa" | "ctr" | "status";
+type SortDir = "asc" | "desc";
+
+// Pull a comparable number out of a formatted cell ("฿1,234.5" → 1234.5).
+const num = (v: string) => Number(v.replace(/[^0-9.-]/g, "")) || 0;
+
+// Text columns sort ascending first; numeric columns show best (largest) first.
+const firstDir = (key: SortKey): SortDir => (key === "name" || key === "status" ? "asc" : "desc");
 
 /** Consolidated ad-accounts table — perf-colored ROAS, status chips, connect CTA. */
 export function AccountsTable({ accounts }: { accounts: OverviewAccountRow[] }) {
   const pc = usePerfColor();
+  const [sort, setSort] = useState<SortKey | null>(null);
+  const [dir, setDir] = useState<SortDir>("desc");
+
+  const onSort = (key: SortKey) => {
+    if (sort === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSort(key);
+      setDir(firstDir(key));
+    }
+  };
+
+  const rows = useMemo(() => {
+    if (!sort) return accounts;
+    const cmp = (a: OverviewAccountRow, b: OverviewAccountRow) => {
+      if (sort === "name" || sort === "status") return a[sort].localeCompare(b[sort]);
+      return num(a[sort]) - num(b[sort]);
+    };
+    const sorted = [...accounts].sort(cmp);
+    return dir === "asc" ? sorted : sorted.reverse();
+  }, [accounts, sort, dir]);
+
+  const arrow = (key: SortKey) => (sort === key ? (dir === "asc" ? "↑" : "↓") : "");
+
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border-2 px-5 py-4">
@@ -32,33 +62,29 @@ export function AccountsTable({ accounts }: { accounts: OverviewAccountRow[] }) 
         <table className="w-full min-w-[720px] border-collapse text-[13px]">
           <thead>
             <tr className="bg-field-bg text-[11px] uppercase tracking-[0.04em] text-muted">
-              <th className="px-5 py-[10px] text-left font-semibold">บัญชี · Account</th>
-              <th className={HEAD}>Spend</th>
-              <th className={HEAD}>Revenue</th>
-              <th className={HEAD}>ROAS</th>
-              <th className={HEAD}>Purch.</th>
-              <th className={HEAD}>CPA</th>
-              <th className={HEAD}>CTR</th>
-              <th className="px-5 py-[10px] text-right font-semibold">Status</th>
+              <Th sortKey="name" onSort={onSort} active={sort} arrow={arrow} align="left" pad="px-5">
+                บัญชี · Account
+              </Th>
+              <Th sortKey="spend" onSort={onSort} active={sort} arrow={arrow}>Spend</Th>
+              <Th sortKey="revenue" onSort={onSort} active={sort} arrow={arrow}>Revenue</Th>
+              <Th sortKey="roas" onSort={onSort} active={sort} arrow={arrow}>ROAS</Th>
+              <Th sortKey="purchases" onSort={onSort} active={sort} arrow={arrow}>Purch.</Th>
+              <Th sortKey="cpa" onSort={onSort} active={sort} arrow={arrow}>CPA</Th>
+              <Th sortKey="ctr" onSort={onSort} active={sort} arrow={arrow}>CTR</Th>
+              <Th sortKey="status" onSort={onSort} active={sort} arrow={arrow} pad="px-5">
+                Status
+              </Th>
             </tr>
           </thead>
           <tbody>
-            {accounts.map((a, i) => {
+            {rows.map((a) => {
               const active = a.status === "Active";
               return (
                 <tr key={a.name} className="border-t border-border-2">
                   <td className="px-5 py-[13px]">
-                    <div className="flex items-center gap-[11px]">
-                      <div
-                        className="num flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-control text-[12px] font-semibold text-white"
-                        style={{ background: RAMP[i] }}
-                      >
-                        {a.initials}
-                      </div>
-                      <div className="leading-[1.25]">
-                        <div className="font-semibold text-ink">{a.name}</div>
-                        <div className="text-[11px] text-muted-2">{a.platform}</div>
-                      </div>
+                    <div className="leading-[1.25]">
+                      <div className="font-semibold text-ink">{a.name}</div>
+                      <div className="text-[11px] text-muted-2">{a.platform}</div>
                     </div>
                   </td>
                   <td className="num px-[14px] py-[13px] text-right text-ink-2">{a.spend}</td>
@@ -90,5 +116,37 @@ export function AccountsTable({ accounts }: { accounts: OverviewAccountRow[] }) 
         </table>
       </div>
     </Card>
+  );
+}
+
+/** Clickable, sort-aware column header — accent + arrow when it's the active sort key. */
+function Th({
+  children,
+  sortKey,
+  onSort,
+  active,
+  arrow,
+  align = "right",
+  pad = "px-[14px]",
+}: {
+  children: React.ReactNode;
+  sortKey: SortKey;
+  onSort: (key: SortKey) => void;
+  active: SortKey | null;
+  arrow: (key: SortKey) => string;
+  align?: "left" | "right";
+  pad?: string;
+}) {
+  const on = active === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className={`${pad} cursor-pointer select-none py-[10px] font-semibold ${
+        align === "left" ? "text-left" : "text-right"
+      } ${on ? "text-accent" : ""}`}
+    >
+      {children}
+      <span className={`num ml-1 ${on ? "text-accent" : "text-[#c2c7cf]"}`}>{arrow(sortKey)}</span>
+    </th>
   );
 }
