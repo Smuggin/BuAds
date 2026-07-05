@@ -1,0 +1,65 @@
+name: nightly-budget-reset
+
+# Fires the ฿300 nightly budget reset at exactly 00:00 Asia/Bangkok (= 17:00 UTC).
+# Replaces Vercel's Hobby cron, which triggered anywhere within the hour after
+# midnight. GitHub's scheduler can itself lag a few minutes (worst at the top of the
+# hour), so we schedule 10 min early — off the busy top-of-hour — and then sleep until
+# the exact target second before calling the endpoint. Auth is the same CRON_SECRET the
+# route already checks; it lives only in an encrypted GitHub secret, never in this file.
+
+on:
+  schedule:
+    - cron: "50 16 * * *" # 16:50 UTC = 23:50 Asia/Bangkok (job waits to 17:00:00 UTC)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Manual run: dry-run only (no budget writes)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: nightly-budget-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Trigger budget reset at 00:00 Asia/Bangkok
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          base="https://buads.vercel.app/api/cron/daily"
+
+          if [ "$EVENT" = "schedule" ]; then
+            # Sleep until exactly 17:00:00 UTC (00:00:00 ICT). If GitHub fired us late
+            # (already past target), skip the wait and call immediately.
+            target=$(date -u -d 'today 17:00:00' +%s)
+            now=$(date -u +%s)
+            if [ "$now" -lt "$target" ]; then
+              echo "Waiting $((target - now))s until 00:00 Asia/Bangkok…"
+              sleep "$((target - now))"
+            else
+              echo "Trigger arrived $((now - target))s after target — calling now."
+            fi
+            method="POST"; url="$base"
+          elif [ "${DRY_RUN:-true}" = "false" ]; then
+            method="POST"; url="$base"          # manual real reset (writes budgets)
+          else
+            method="GET";  url="$base?dry=1"     # manual safe test — counts only, no writes
+          fi
+
+          echo "[$(date -u +%FT%TZ) UTC] $method $url"
+          code=$(curl -sS --retry 2 --retry-delay 10 --max-time 90 \
+            -o /tmp/resp.json -w '%{http_code}' \
+            -X "$method" -H "Authorization: Bearer ${CRON_SECRET}" "$url" || echo "000")
+          echo "HTTP $code"
+          echo "Response body:"; head -c 2000 /tmp/resp.json 2>/dev/null || true; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::budget reset call failed (HTTP $code)"
+            exit 1
+          fi
