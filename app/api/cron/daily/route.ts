@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { runSync } from "@/lib/meta/sync";
 import { resetCampaignBudgets, BUDGET_RULE_ID, type BudgetResetResult } from "@/lib/rules/budgetReset";
 import { prisma } from "@/lib/db";
@@ -72,21 +72,25 @@ export async function POST(req: Request) {
   const denied = denyUnlessCron(req);
   if (denied) return denied;
 
-  let budget: BudgetResetResult | undefined;
-  let map: unknown;
-  let error: string | undefined;
-  try {
-    budget = await resetCampaignBudgets();
-    map = await runSync({ mode: "map" });
-  } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
-  }
+  // Do the work AFTER the response so the trigger gets an immediate 200 — external
+  // schedulers (e.g. cron-job.org) drop the connection at a ~30s client timeout, and
+  // the reset + map sync can run longer than that. The real outcome (incl. failures)
+  // is captured in the Activity Log via logCronRun(), not in this response body.
+  after(async () => {
+    let budget: BudgetResetResult | undefined;
+    let map: unknown;
+    let error: string | undefined;
+    try {
+      budget = await resetCampaignBudgets();
+      map = await runSync({ mode: "map" });
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    await cleanupSessions();
+    await logCronRun({ budget, map, error });
+  });
 
-  const sessionsPurged = await cleanupSessions();
-  await logCronRun({ budget, map, error });
-
-  if (error) return NextResponse.json({ error, budget, map, sessionsPurged }, { status: 500 });
-  return NextResponse.json({ budget, map, sessionsPurged });
+  return NextResponse.json({ started: true });
 }
 
 /** Vercel cron triggers via GET. `?dry=1` runs the budget reset in dry-run mode
