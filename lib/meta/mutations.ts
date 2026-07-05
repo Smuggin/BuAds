@@ -8,7 +8,11 @@
  * write-test endpoint alike.
  */
 import { graphBatch, graphPost, type BatchRequest } from "./client";
-import { assertWriteAllowed, assertWritesAllowedBulk } from "./writeGuard";
+import {
+  assertAccountWriteAllowed,
+  assertWriteAllowed,
+  assertWritesAllowedBulk,
+} from "./writeGuard";
 
 /** Pause or resume a campaign in Meta. status ACTIVE = resume, PAUSED = pause. */
 export async function setCampaignStatus(
@@ -36,6 +40,22 @@ export async function setCampaignBudget(
   // Frozen single-key body — guarantees we never co-send `status` (on/off) with a budget.
   const body = { daily_budget: dailyBudgetMinor } as const;
   await graphPost<{ success?: boolean }>(`/${metaCampaignId}`, body, token);
+}
+
+/** Set an AD SET's daily budget in Meta. Used by the nightly reset for campaigns whose
+ *  budget lives at the ad-set level (ABO) rather than the campaign level. Gated by the
+ *  ACCOUNT allowlist (ad sets aren't in our DB) — `actId` is the owning act_ id the
+ *  caller resolved from the account loop. Budget-ONLY body, same invariant as campaigns:
+ *  no `status` is ever co-sent, so the ad set's on/off state is untouched. */
+export async function setAdSetBudget(
+  adSetId: string,
+  dailyBudgetMinor: number,
+  actId: string,
+  token: string,
+): Promise<void> {
+  assertAccountWriteAllowed(actId);
+  const body = { daily_budget: dailyBudgetMinor } as const;
+  await graphPost<{ success?: boolean }>(`/${adSetId}`, body, token);
 }
 
 /** One staged campaign edit: a status flip and/or a new daily budget (minor units). */

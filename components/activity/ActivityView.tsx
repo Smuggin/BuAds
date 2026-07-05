@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { getCampaigns, getLogs, getProducts } from "@/lib/api";
 import { LOG_ACTOR_META, LOG_TYPE_META } from "@/lib/constants";
-import { LOG_DAYS } from "@/data/logs";
 import { useAppStore } from "@/store/AppProvider";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Card } from "@/components/ui/Card";
@@ -14,6 +13,21 @@ const FILTERS = [
   ["manual", "ทีมงาน · Manual"],
   ["auto", "ระบบอัตโนมัติ · Automation"],
 ] as const;
+
+// Sort key so groups order today → yesterday → older dates (descending). The API day is
+// "today" | "yesterday" | "YYYY-MM-DD"; the sentinels sort above any real ISO date.
+const dayRank = (k: string) =>
+  k === "today" ? "9999-99-99" : k === "yesterday" ? "9999-99-98" : k;
+
+/** Human label for a day bucket. Older buckets are ISO dates → a Thai date label. */
+function dayLabel(k: string): string {
+  if (k === "today") return "วันนี้ · Today";
+  if (k === "yesterday") return "เมื่อวาน · Yesterday";
+  const d = new Date(k + "T00:00:00");
+  return Number.isNaN(d.getTime())
+    ? k
+    : d.toLocaleDateString("th-TH-u-ca-gregory", { weekday: "short", day: "numeric", month: "short" });
+}
 
 export function ActivityView() {
   const [logs, setLogs] = useState<LogEntry[] | null>(null);
@@ -50,6 +64,10 @@ export function ActivityView() {
     auto: logs.filter((e) => e.actor === "auto").length,
   };
   const filtered = logs.filter((e) => logActor === "all" || e.actor === logActor);
+  // Day groups derived from the data itself (not a fixed list), ordered newest-first.
+  const days = [...new Set(filtered.map((e) => e.day))].sort((a, b) =>
+    dayRank(b).localeCompare(dayRank(a)),
+  );
   const subjectOf = (e: LogEntry) =>
     e.campaignId
       ? (campaigns.find((c) => c.id === e.campaignId)?.name ?? "")
@@ -77,12 +95,12 @@ export function ActivityView() {
         </select>
       </section>
 
-      {LOG_DAYS.map(([key, label]) => {
+      {days.map((key) => {
         const entries = filtered.filter((e) => e.day === key);
         if (entries.length === 0) return null;
         return (
           <div key={key} className="flex flex-col gap-2">
-            <div className="px-1 text-[12px] font-semibold text-muted">{label}</div>
+            <div className="px-1 text-[12px] font-semibold text-muted">{dayLabel(key)}</div>
             <Card className="overflow-hidden">
               {entries.map((e) => {
                 const tm = LOG_TYPE_META[e.type];

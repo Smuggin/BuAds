@@ -1,14 +1,23 @@
 /**
- * Automation rule: reset every campaign's daily budget to ฿300. Runs nightly via
- * the daily cron (midnight Bangkok). Targets campaign-level daily budgets only —
- * ad-set-level and lifetime budgets can't take a campaign daily_budget write, so
- * they're counted as skipped. Gated by the rule's on/off (DB). Server-only.
+ * Automation rule: reset a campaign's daily budget to ฿300. Runs nightly via the daily
+ * cron (midnight Bangkok). Targets every campaign that was OPENED OR SCALED that day —
+ * i.e. ACTIVE right now, OR paused now but with spend recorded for today (so a campaign
+ * scaled up during the day and paused before midnight is back at ฿300 when reopened).
+ * Resets BOTH:
+ *   - campaign-level daily budgets (CBO / Advantage campaign budget), and
+ *   - for eligible campaigns whose budget lives at the AD-SET level (ABO), each of their
+ *     active/paused ad sets' daily budgets.
+ * Archived/deleted campaigns and long-idle paused campaigns (no spend today) are skipped —
+ * this deliberately avoids rewriting the hundreds of dormant paused campaigns per account.
+ * Gated by the rule's on/off (DB) and the fail-closed write guard. Activity logging is
+ * centralized in the cron route so every run — success, no-op, or failure — leaves one
+ * durable record. Server-only.
  */
 import { prisma } from "@/lib/db";
 import { getActiveToken } from "@/lib/meta/auth";
 import { gatherAccounts } from "@/lib/meta/sync";
 import { graphGetAll } from "@/lib/meta/client";
-import { setCampaignBudget } from "@/lib/meta/mutations";
+import { setAdSetBudget, setCampaignBudget } from "@/lib/meta/mutations";
 
 export const BUDGET_RULE_ID = "rule_budget_reset";
 
@@ -27,13 +36,24 @@ const TARGET_THB = 300;
 const TARGET_MINOR = TARGET_THB * 100; // ฿300 → 30000 minor units
 const CONCURRENCY = 8;
 
+/** Per-account tally — surfaced in the run's activity-log entry for visibility. */
+export interface AccountResetStat {
+  actId: string;
+  name: string;
+  campaigns: number; // campaign-level budgets reset (or, in dry-run, that WOULD be)
+  adsets: number; // ad-set-level budgets reset (or would be)
+  errors: number;
+}
+
 export interface BudgetResetResult {
   dryRun: boolean;
   on: boolean;
   target: number; // THB
-  reset: number; // campaigns set (or, in dry-run, that WOULD be set)
-  skipped: number; // ad-set / lifetime budget campaigns (can't take a campaign daily_budget)
+  campaignsReset: number; // campaign-level daily budgets set (or would be)
+  adsetsReset: number; // ad-set-level daily budgets set (or would be)
+  skipped: number; // campaigns nothing was done to (paused/archived, or lifetime-only)
   errors: string[];
+  perAccount: AccountResetStat[];
 }
 
 /** Ensure the rule row exists so the Automation page shows it and we can gate on it. */
@@ -52,6 +72,16 @@ interface MetaCampaign {
   daily_budget?: string;
 }
 
+interface MetaAdSet {
+  id: string;
+  name?: string;
+  status?: string;
+  daily_budget?: string;
+}
+
+/** One thing to reset — a campaign daily_budget or an ad-set daily_budget. */
+type Target = { kind: "campaign" | "adset"; id: string; actId: string };
+
 export async function resetCampaignBudgets(opts: { dryRun?: boolean } = {}): Promise<BudgetResetResult> {
   const dryRun = !!opts.dryRun;
   const rule = await ensureRule();
@@ -59,9 +89,11 @@ export async function resetCampaignBudgets(opts: { dryRun?: boolean } = {}): Pro
     dryRun,
     on: rule.on,
     target: TARGET_THB,
-    reset: 0,
+    campaignsReset: 0,
+    adsetsReset: 0,
     skipped: 0,
     errors: [],
+    perAccount: [],
   };
   if (!rule.on) return result; // rule switched off — do nothing
 
@@ -71,11 +103,25 @@ export async function resetCampaignBudgets(opts: { dryRun?: boolean } = {}): Pro
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // collect campaign-level-budget targets across all accounts
-  const targets: string[] = [];
+  // "Ran today" = campaigns with any spend in today's insight window (kept fresh by the
+  // syncs). Union with active-now (below) targets every campaign opened or scaled during
+  // the day — including ones now paused — while skipping the hundreds of dormant paused
+  // campaigns that never ran. Meta campaign ids, to match the Graph campaign list.
+  const ranRows = await prisma.campaign.findMany({
+    where: { insights: { some: { window: "today", spend: { gt: 0 } } } },
+    select: { metaCampaignId: true },
+  });
+  const ranToday = new Set(ranRows.map((r) => r.metaCampaignId));
+
+  // Collect every reset target across all allowlisted accounts, with per-account tallies.
+  const targets: Target[] = [];
+  const statOf = new Map<string, AccountResetStat>();
+
   for (const a of await gatherAccounts(token)) {
     const actId = `act_${a.account_id}`;
     if (allow.length && !allow.includes(actId)) continue;
+    const stat: AccountResetStat = { actId, name: a.name ?? actId, campaigns: 0, adsets: 0, errors: 0 };
+    statOf.set(actId, stat);
     try {
       const camps = await graphGetAll<MetaCampaign>(
         `/${actId}/campaigns`,
@@ -83,56 +129,98 @@ export async function resetCampaignBudgets(opts: { dryRun?: boolean } = {}): Pro
         token,
       );
       for (const c of camps) {
-        // active campaigns with a campaign-level daily budget; the rest are skipped
-        // (paused/archived, or ad-set/lifetime budgets that can't take this write).
-        if (c.daily_budget && (c.status ?? "").toUpperCase() === "ACTIVE") targets.push(c.id);
-        else result.skipped++;
+        const status = (c.status ?? "").toUpperCase();
+        // Only ACTIVE/PAUSED campaigns are editable; ARCHIVED/DELETED can't take a write.
+        const editable = status === "ACTIVE" || status === "PAUSED";
+        // Eligible = opened/scaled today: on right now, or ran today (even if now paused).
+        const eligible = editable && (status === "ACTIVE" || ranToday.has(c.id));
+        if (!eligible) {
+          result.skipped++; // archived/deleted, or paused with no spend today — leave it alone
+          continue;
+        }
+        if (c.daily_budget) {
+          targets.push({ kind: "campaign", id: c.id, actId }); // campaign-level budget
+          continue;
+        }
+        // Eligible campaign with NO campaign-level budget → its budget is at the ad-set level.
+        // Reset each active/paused ad set that carries a daily budget (lifetime ad sets skip).
+        try {
+          const adsets = await graphGetAll<MetaAdSet>(
+            `/${c.id}/adsets`,
+            { fields: "id,name,status,daily_budget" },
+            token,
+          );
+          const resettable = adsets.filter((s) => {
+            const st = (s.status ?? "").toUpperCase();
+            return (st === "ACTIVE" || st === "PAUSED") && s.daily_budget;
+          });
+          if (resettable.length === 0) {
+            result.skipped++; // eligible campaign but nothing resettable (lifetime / archived ad sets)
+            continue;
+          }
+          for (const s of resettable) targets.push({ kind: "adset", id: s.id, actId });
+        } catch (e) {
+          result.errors.push(`${c.id} adsets: ${e instanceof Error ? e.message : String(e)}`);
+          stat.errors++;
+        }
       }
     } catch (e) {
       result.errors.push(`${actId}: ${e instanceof Error ? e.message : String(e)}`);
+      stat.errors++;
     }
   }
 
+  const bump = (t: Target) => {
+    const s = statOf.get(t.actId)!;
+    if (t.kind === "campaign") {
+      s.campaigns++;
+      result.campaignsReset++;
+    } else {
+      s.adsets++;
+      result.adsetsReset++;
+    }
+  };
+
   if (dryRun) {
-    result.reset = targets.length; // count only — no writes
+    for (const t of targets) bump(t); // count only — no writes
+    result.perAccount = [...statOf.values()];
     return result;
   }
 
-  // live writes — bounded concurrency to fit the 60s function limit
+  // Live writes — bounded concurrency to fit the 60s function limit. Each mutation sends
+  // ONLY daily_budget (never status), so on/off state is untouched. Absolute-value writes
+  // are idempotent, so the shared cursor + retries are safe.
   let i = 0;
   const worker = async () => {
     while (i < targets.length) {
-      const id = targets[i++];
+      const t = targets[i++];
       try {
-        // Budget-only: the Meta write sends just daily_budget, and the DB mirror updates
-        // only dailyBudgetMinor. Campaign on/off (status) is never read or written here,
-        // so an active campaign stays active and a paused one stays paused.
-        await setCampaignBudget(id, TARGET_MINOR, token);
-        await prisma.campaign.updateMany({
-          where: { metaCampaignId: id },
-          data: { dailyBudgetMinor: TARGET_MINOR },
-        });
-        result.reset++;
+        if (t.kind === "campaign") {
+          await setCampaignBudget(t.id, TARGET_MINOR, token);
+          // Mirror the campaign-level budget in our DB (ad sets aren't mirrored).
+          await prisma.campaign.updateMany({
+            where: { metaCampaignId: t.id },
+            data: { dailyBudgetMinor: TARGET_MINOR },
+          });
+        } else {
+          await setAdSetBudget(t.id, TARGET_MINOR, t.actId, token);
+        }
+        bump(t);
       } catch (e) {
-        result.errors.push(`budget ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        result.errors.push(`${t.kind} ${t.id}: ${e instanceof Error ? e.message : String(e)}`);
+        statOf.get(t.actId)!.errors++;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
 
-  // bookkeeping: bump the rule + one summary activity-log entry
+  result.perAccount = [...statOf.values()];
+
+  // Bookkeeping: bump the rule. The run's activity-log entry is written by the cron route
+  // (so failures that never reach here are still logged there).
   await prisma.rule.update({
     where: { id: BUDGET_RULE_ID },
     data: { runs: { increment: 1 }, lastRunAt: new Date() },
-  });
-  await prisma.activityLog.create({
-    data: {
-      actor: "AUTO",
-      ruleId: BUDGET_RULE_ID,
-      type: "BUDGET_DOWN",
-      title: "รีเซ็ตงบ ฿300 · Budget reset",
-      detail: `${result.reset} แคมเปญ → ฿300`,
-    },
   });
   return result;
 }
