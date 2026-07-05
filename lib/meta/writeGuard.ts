@@ -35,6 +35,27 @@ export function writeAllowlist(): string[] {
 }
 
 /**
+ * Account-scoped variant of the fail-closed gate. Ad sets aren't mirrored in our
+ * DB, so ad-set budget writes (nightly reset) can't resolve through a campaign row —
+ * the caller passes the owning `act_` id it already resolved from the account loop,
+ * and this enforces the SAME master-switch + allowlist checks. Throws on refusal.
+ */
+export function assertAccountWriteAllowed(actId: string): void {
+  if (!writesEnabled()) {
+    throw new MetaWriteBlockedError("Meta writes are disabled (set META_WRITES_ENABLED=on)");
+  }
+  const allow = writeAllowlist();
+  if (allow.length === 0) {
+    throw new MetaWriteBlockedError(
+      "No write-allowlisted accounts — set META_AD_ACCOUNTS to the target act_ id(s)",
+    );
+  }
+  if (!allow.includes(actId)) {
+    throw new MetaWriteBlockedError(`Account ${actId} is not in the write allowlist (META_AD_ACCOUNTS)`);
+  }
+}
+
+/**
  * Throw MetaWriteBlockedError unless a write to this campaign is permitted.
  * Returns the resolved account id + campaign name on success.
  */
