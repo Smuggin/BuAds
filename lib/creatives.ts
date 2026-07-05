@@ -87,6 +87,7 @@ export function groupCreatives(inputs: CreativeGroupInput[]): Creative[] {
     const ctr = sum.impressions ? r2((sum.clicks / sum.impressions) * 100) : 0;
     const cpa = sum.purchases ? Math.round(sum.spend / sum.purchases) : 0;
     const frequency = sum.reach ? r2(sum.impressions / sum.reach) : 0;
+    const cpm = sum.impressions ? r2((sum.spend / sum.impressions) * 1000) : 0;
 
     out.push({
       ...rep.creative,
@@ -97,6 +98,9 @@ export function groupCreatives(inputs: CreativeGroupInput[]): Creative[] {
       ctr,
       cpa,
       frequency,
+      reach: sum.reach,
+      cpm,
+      revenue: Math.round(sum.revenue),
       adStatus: active ? "ACTIVE" : "PAUSED",
       campaigns: [...campaigns],
       groupSize: members.length,
